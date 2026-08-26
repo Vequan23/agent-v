@@ -2,105 +2,131 @@
 
 ## Objective
 
-`agent-v` is a stable application-facing contract over changing AI providers, orchestration frameworks, and local agent runtimes. It optimizes for substitution, auditability, local ownership, and narrowly scoped capabilities.
+`agent-v` is the stable application-facing contract over changing AI providers, orchestration frameworks, and local agent runtimes. It optimizes for substitution, auditability, client isolation, local ownership, and narrowly scoped capabilities.
+
+There are no current consumers to preserve. Version 0.2 intentionally chooses explicit, fail-closed contracts over compatibility with the 0.1 prototype.
 
 ## Dependency rule
 
-Dependencies point inward:
-
 ```text
-products -> agent-v core <- adapters
-                    ^      ai-sdk / local-cli / future langgraph
-                    |
-             host persistence and UI
+products  ───────────────►  agent-v core  ◄──────────────  adapters
+domain policy + UX          contracts + policy ports       AI SDK / local CLI / future engines
+                                  ▲
+                                  │
+                         host persistence, identity,
+                         credentials, and telemetry
 ```
 
-The core imports no provider SDK and no Node-only module. Adapters translate framework-specific behavior into normalized contracts and events. Products never need to expose provider result objects to their domain layer.
+The core imports no provider SDK and no Node-only module. Adapters translate framework behavior into normalized contracts and events. Products do not expose provider result objects to their domain layer.
 
-## Core model
+## Engine contracts
 
-There are three engine contracts because their security and execution semantics differ:
+The engine types remain separate because they have different safety semantics:
 
 1. `StructuredModelEngine` performs one schema-bound model operation.
-2. `ToolAgentEngine` runs a bounded tool loop and supports streaming.
-3. `CodingRuntimeEngine` invokes an installed local coding agent against an explicitly scoped workspace.
+2. `ToolAgentEngine` runs a bounded model/tool loop and can stream normalized events.
+3. `CodingRuntimeEngine` invokes an installed coding agent against an explicitly scoped workspace.
 
-Combining them behind one vague `generate()` interface would hide meaningful capabilities and make unsafe fallbacks easy. `EngineRegistry` therefore resolves by id, kind, and declared capabilities.
+`EngineRegistry` resolves by id, kind, and capabilities. It does not silently substitute a weaker engine.
 
-## Extension model
+## Mandatory execution scope
 
-- An **agent blueprint** is application-owned composition: instructions, engine id, skills, tools, required capabilities, and a step bound.
-- A **skill** is versioned, portable domain guidance with optional artifacts and a tool allowlist.
-- A **tool** is a typed capability with a JSON-schema input contract and an optional approval requirement.
-- **Middleware** handles cross-cutting concerns such as telemetry, policy enforcement, budgets, and redaction.
-- An **extension** packages any combination of those elements without gaining ambient authority.
+Every run supplies `ExecutionScope`:
 
-Registration is explicit and duplicate ids fail fast. Extensions cannot access global credentials, files, networks, or databases unless the host deliberately supplies those capabilities through a tool or adapter.
+- tenant, project, principal, and optional engagement isolate persisted state and event queries;
+- principal, roles, and permissions drive host and tool policy;
+- optional engagement id supports consulting/client work without inventing a separate runtime;
+- data classification gives middleware and adapters a stable privacy signal.
 
-## Execution lifecycle
+The same scope is attached to approval requests, sessions, run events, tool contexts, and model resolution. This prevents a universal engine from relying on ambient application identity.
 
-Every adapter maps its work to a small event protocol:
+## Tools and authority
+
+An `AgentTool` declares a stable name/version, JSON-schema input and output contracts, risk, side-effect behavior, required permissions, approval requirement, and timeout. Execution follows this order:
+
+```text
+model tool call
+  → validate input
+  → verify scoped permissions
+  → request and record approval when required
+  → execute with cancellation and timeout
+  → validate output
+  → return normalized result to the model
+```
+
+External-side-effect and privileged tools must require approval. A host approval policy remains authoritative; skill metadata can never bypass it. Tool failures emitted as events use safe normalized messages.
+
+The shared repository should contain broadly reusable, well-tested tool contracts and adapters. Product-specific tools stay with the product until their semantics are genuinely shared. This avoids turning `agent-v` into an ungoverned catalog with ambient authority.
+
+## Skills and agents
+
+- An **agent blueprint** selects exactly one engine or profile, instructions, skills, tools, required capabilities, and a step bound.
+- A **skill** is portable domain guidance plus a tool allowlist and optional evidence artifacts.
+- An **extension** packages tools, skills, and middleware but gains no authority merely by registration.
+- **Middleware** handles cross-cutting policy, telemetry, redaction, and budget enforcement supplied by a host.
+
+When an agent selects skills, every requested tool must appear in their combined allowlist. A mismatch rejects preparation rather than silently reducing capability.
+
+The Node adapter loads the open Agent Skills directory format: `SKILL.md` with optional scripts, references, and assets. Loading only validates and indexes content. Script execution requires a separate explicit tool or sandbox owned by the host.
+
+## Models, profiles, and credentials
+
+The AI SDK adapter resolves a model per run. Resolution can use a static model, a model registry, or a host function receiving model id, run id, execution scope, metadata, and credential reference. Provenance describes what was actually selected; a request cannot relabel a static model as something else.
+
+Profiles are configuration, not engines. They bind a blueprint to an engine id, model id, and opaque credential reference. The host resolves secrets at execution time; configuration and events contain references, never credential values.
+
+This keeps the core compatible with direct provider clients, the Vercel AI SDK, LangGraph, durable workflow runtimes, local models, and future harnesses without adopting their types.
+
+## Events, sessions, and persistence
+
+Adapters normalize execution into:
 
 ```text
 run.started
   model.started / model.completed
   text.delta*
   tool.requested
-    approval.requested -> approval.resolved
+    approval.requested → approval.resolved
     tool.completed | tool.failed
 run.completed | run.failed
 ```
 
-This protocol is UI-neutral. A web component library, React application, terminal, or background worker can consume the same stream. Events carry safe, normalized data; provider internals stay inside adapters.
-
-## Data and persistence
-
-`ContextArtifact` is the common evidence unit. It supports stable URIs plus page, EPUB CFI, text, line, and custom anchors. This is sufficient for distribution evidence, source code, PDF/EPUB passages, research notes, and future media-specific adapters without forcing document parsing into the engine.
+Events are UI-neutral and scope-carrying. `AgentMessage` uses typed parts for text, JSON, artifacts, files, and images rather than overloading one string.
 
 Persistence is port-based:
 
-- `ConfigStore` stores profiles, defaults, limits, and credential references.
-- `SessionStore` stores application-approved conversational state.
-- `RunEventStore` stores normalized execution history.
-- `CredentialResolver` resolves a reference at execution time.
+- `ConfigStore` stores profiles and safe defaults.
+- `SessionStore` stores host-approved conversational state by scope.
+- `RunEventStore` stores normalized execution history by scope.
+- `CredentialResolver` is a host port for resolving opaque references.
 
-The Node reference implementation writes private, atomic JSON files and append-only JSONL events. A product can replace these with SQLite, Postgres, object storage, or an encrypted store without changing its agents.
+The Node implementation uses private atomic JSON files and a serialized append-only JSONL ledger. Products can replace these with SQLite, Postgres, object storage, encrypted stores, or consulting-specific infrastructure without changing agent definitions.
 
-## Runtime control plane
+## Local runtime control plane
 
-Local coding runtimes are treated as fallible external systems:
+Local coding agents are fallible external systems:
 
-- discovery, authentication/readiness, and execution are separate states;
-- readiness belongs to a detected runtime version and is invalidated on version change;
-- execution has timeout and output-size bounds;
-- stdin closes immediately to prevent interactive hangs;
-- temporary schema/output files use private permissions and are removed;
-- workspace mode defaults to read-only and must match advertised capability;
-- failures are classified into safe categories without retaining raw diagnostics.
+- installed, authenticated/verified, and runnable are distinct states;
+- readiness belongs to an executable version and expires when that version changes;
+- execution has time and output bounds and closes stdin immediately;
+- schema/output files are private and temporary;
+- workspace access defaults to read-only and must match an advertised enforceable capability;
+- unstructured or schema-invalid output is rejected and can receive one bounded repair attempt;
+- safe failure categories are emitted without persisting raw diagnostics.
 
-New runtimes implement `LocalRuntimeDefinition`; novel execution environments implement `CodingRuntimeEngine` directly.
-
-## Framework adapters
-
-The AI SDK adapter is a reference implementation, not the architecture. A future LangGraph, direct provider, on-device model, remote harness, or durable-workflow adapter should implement the same engine contracts. Product code should select an engine profile and required capabilities, not branch on framework names.
-
-Adapters may expose additional opt-in APIs under their own package subpath, but must preserve the normalized core lifecycle.
+Codex supports enforced read-only and workspace-write modes. OpenCode currently advertises workspace-write only. Claude Code advertises read-only only. Cursor remains discoverable but does not advertise structured output, so the engine refuses to run it through the structured contract.
 
 ## Product boundary
 
-Keep these outside `agent-v`:
+Keep meaning and judgment in the product:
 
-- Distribution OS evidence scoring, opportunity ranking, founder voice, channel policy, and approval UX;
-- Aperta proof graphs, patch verification, repository policy, and ownership claims;
-- reader ingestion, layout, highlighting, search index, pedagogy, and citation presentation;
-- product-specific prompts, analytics, billing, and user identity.
+- Distribution OS: evidence scoring, opportunity ranking, founder voice, channel policy, approval UX, and outcome learning.
+- Aperta: proof graphs, patch verification, repository policy, and ownership claims.
+- Reader products: document ingestion, layout, highlights, search/retrieval, pedagogy, and citation presentation.
+- Consulting: client-specific prompts, data connectors, deliverables, retention rules, and contractual policy.
 
-Centralize the mechanism. Keep meaning and judgment close to the product that owns them.
+Centralize execution mechanisms only when their semantics and safety rules are reusable.
 
-## Compatibility policy
+## Verification standard
 
-- Stable core contracts use semantic versioning.
-- Capability strings permit additive extension without widening existing engine behavior.
-- Config has an explicit schema version.
-- Skills and extensions carry their own versions.
-- Provider/runtime versions are recorded as provenance or readiness evidence, not embedded into product truth.
+A release must pass strict TypeScript checking, deterministic unit/integration tests, a production build, imports from the built package subpaths, and `npm pack --dry-run`. CI runs this suite on the minimum Node version and the current release line.

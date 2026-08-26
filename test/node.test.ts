@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { JsonConfigStore, JsonlRunEventStore } from "../src/node/index.ts";
+import { JsonConfigStore, JsonSessionStore, JsonlRunEventStore, loadSkillPackage } from "../src/node/index.ts";
+import { localExecutionScope } from "../src/core/index.ts";
 
 test("local stores round-trip config and append run events", async () => {
   const directory = await mkdtemp(join(tmpdir(), "agent-v-test-"));
@@ -12,10 +13,37 @@ test("local stores round-trip config and append run events", async () => {
   const initial = await config.load();
   assert.equal(initial.version, 1);
   await config.save(initial);
-  assert.equal(JSON.parse(await readFile(configPath, "utf8")).privacy.persistPrompts, false);
+  assert.equal(JSON.parse(await readFile(configPath, "utf8")).execution.maxSteps, 20);
 
   const ledger = new JsonlRunEventStore(join(directory, "runs.jsonl"));
-  await ledger.emit({ type: "status", runId: "r1", timestamp: new Date(0).toISOString(), message: "ready" });
-  await ledger.emit({ type: "status", runId: "r2", timestamp: new Date(0).toISOString(), message: "other" });
-  assert.equal((await ledger.list("r1")).length, 1);
+  const scope = localExecutionScope("test");
+  await ledger.emit({ type: "status", runId: "r1", timestamp: new Date(0).toISOString(), scope, message: "ready" });
+  await ledger.emit({ type: "status", runId: "r2", timestamp: new Date(0).toISOString(), scope, message: "other" });
+  assert.equal((await ledger.list(scope, "r1")).length, 1);
+});
+
+test("filesystem sessions with the same id remain tenant and project isolated", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "agent-v-sessions-"));
+  const store = new JsonSessionStore(directory);
+  const first = localExecutionScope("project-a");
+  const second = { ...localExecutionScope("project-a"), tenantId: "client-b" };
+  const third = { ...localExecutionScope("project-a"), principalId: "other-user" };
+  await store.save({ id: "same", agentId: "reader", createdAt: "now", updatedAt: "now", messages: [], scope: first });
+  await store.save({ id: "same", agentId: "reader", createdAt: "later", updatedAt: "later", messages: [], scope: second });
+  assert.equal((await store.get(first, "same"))?.createdAt, "now");
+  assert.equal((await store.get(second, "same"))?.createdAt, "later");
+  assert.equal(await store.get(third, "same"), undefined);
+});
+
+test("loads a standard Agent Skills package without executing bundled resources", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "agent-v-skills-"));
+  const directory = join(parent, "close-reading");
+  await mkdir(join(directory, "scripts"), { recursive: true });
+  await writeFile(join(directory, "SKILL.md"), `---\nname: close-reading\ndescription: Ground explanations in selected source material.\nlicense: MIT\nmetadata:\n  version: 1.2.0\nallowed-tools: search-source cite-source\n---\nUse anchors and distinguish source claims from interpretation.\n`);
+  await writeFile(join(directory, "scripts", "prepare.mjs"), `throw new Error("must not execute during discovery");\n`);
+  const loaded = await loadSkillPackage(directory);
+  assert.equal(loaded.skill.id, "close-reading");
+  assert.equal(loaded.skill.version, "1.2.0");
+  assert.deepEqual(loaded.skill.tools, ["search-source", "cite-source"]);
+  assert.equal(loaded.scripts.length, 1);
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defineOutput } from "../src/core/index.ts";
+import { defineOutput, localExecutionScope } from "../src/core/index.ts";
 import { LocalCliRuntimeEngine, builtInRuntimes, parseRuntimeOutput } from "../src/adapters/local-cli/index.ts";
 
 test("Codex invocation is bounded by an explicit sandbox and schema", () => {
@@ -29,9 +29,18 @@ test("readiness is version-sensitive and execution validates output", async () =
   const engine = new LocalCliRuntimeEngine({ runner });
   assert.equal((await engine.inspect("codex")).verification, "unverified");
   const output = defineOutput({ name: "ok", jsonSchema: { type: "object" }, parse(value) { if ((value as { ok?: unknown }).ok !== true) throw new Error("invalid"); return { ok: true }; } });
-  assert.deepEqual((await engine.run({ runtimeId: "codex", input: { prompt: "x" }, output })).output, { ok: true });
+  assert.deepEqual((await engine.run({ runtimeId: "codex", scope: localExecutionScope("test"), input: { prompt: "x" }, output })).output, { ok: true });
   assert.equal((await engine.probe("codex")).verification, "ready");
   assert.equal((await engine.inspect("codex")).verification, "ready");
   version = "codex 2.0";
   assert.equal((await engine.inspect("codex")).verification, "unverified");
+});
+
+test("OpenCode refuses a read-only run it cannot enforce", async () => {
+  const engine = new LocalCliRuntimeEngine({ runner: async () => ({ stdout: "", stderr: "" }) });
+  const output = defineOutput({ name: "ok", jsonSchema: { type: "object" }, parse: () => ({ ok: true }) });
+  await assert.rejects(
+    engine.run({ runtimeId: "opencode", scope: localExecutionScope("test"), input: { prompt: "x" }, output }),
+    /does not support read-only access/,
+  );
 });

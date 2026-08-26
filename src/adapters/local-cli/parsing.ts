@@ -8,7 +8,7 @@ export function classifyProcessFailure(error: unknown): AgentVError {
   if (record.killed || record.signal === "SIGTERM" || /timed out|timeout/.test(diagnostic)) {
     return new AgentVError("timeout", "The runtime did not complete within the configured time limit.", { retryable: true, cause: error });
   }
-  if (/auth|login|log in|unauthori[sz]ed|credential|api key|token/.test(diagnostic)) {
+  if (/auth|login|log in|unauthori[sz]ed|credential|api key|access token|bearer token/.test(diagnostic)) {
     return new AgentVError("authentication-required", "The runtime rejected the request because its authentication is not ready.", { cause: error });
   }
   if (record.code === "ENOENT") return new AgentVError("engine-unavailable", "The runtime executable is missing or is not on PATH.", { cause: error });

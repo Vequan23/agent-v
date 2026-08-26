@@ -10,6 +10,7 @@ import type {
   RunProvenance,
   RuntimeReadiness,
   TokenUsage,
+  ExecutionScope,
 } from "./types.js";
 
 export interface StructuredGenerationRequest<T> extends RunContext {
@@ -39,11 +40,20 @@ export interface ToolExecutionContext extends RunContext {
 
 export interface AgentTool<I = unknown, O = JsonValue> {
   name: string;
+  version: string;
   description: string;
   input: OutputContract<I>;
-  requiresApproval?: boolean;
+  output: OutputContract<O>;
+  requiresApproval: boolean;
+  risk: ToolRisk;
+  sideEffect: ToolSideEffect;
+  requiredPermissions: readonly string[];
+  timeoutMs: number;
   execute(input: I, context: ToolExecutionContext): Promise<O> | O;
 }
+
+export type ToolRisk = "read" | "write" | "external-side-effect" | "privileged";
+export type ToolSideEffect = "none" | "idempotent" | "non-idempotent";
 
 export interface ApprovalRequest {
   id: string;
@@ -52,6 +62,11 @@ export interface ApprovalRequest {
   input: unknown;
   reason: string;
   metadata?: JsonObject;
+  toolVersion?: string;
+  risk: ToolRisk;
+  sideEffect: ToolSideEffect;
+  requiredPermissions: readonly string[];
+  scope: ExecutionScope;
 }
 
 export interface ApprovalPolicy {
@@ -118,19 +133,24 @@ export interface AgentSession {
   updatedAt: string;
   messages: readonly import("./types.js").AgentMessage[];
   metadata?: JsonObject;
+  scope: ExecutionScope;
 }
 
 export interface SessionStore {
-  get(id: string): Promise<AgentSession | undefined>;
+  get(scope: ExecutionScope, id: string): Promise<AgentSession | undefined>;
   save(session: AgentSession): Promise<void>;
-  delete(id: string): Promise<void>;
+  delete(scope: ExecutionScope, id: string): Promise<void>;
 }
 
 export interface RunEventStore {
   append(event: AgentEvent): Promise<void>;
-  list(runId: string): Promise<readonly AgentEvent[]>;
+  list(scope: ExecutionScope, runId: string): Promise<readonly AgentEvent[]>;
 }
 
 export interface CredentialResolver {
   resolve(reference: string): Promise<string | undefined>;
+}
+
+export interface SessionSaveOptions {
+  expectedUpdatedAt?: string;
 }

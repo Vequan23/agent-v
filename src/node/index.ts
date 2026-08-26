@@ -1,6 +1,8 @@
 import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { defaultConfig, type AgentEvent, type AgentSession, type AgentVConfig, type ConfigStore, type EventSink, type RunEventStore, type SessionStore } from "../core/index.js";
+import { defaultConfig, type AgentEvent, type AgentSession, type AgentVConfig, type ConfigStore, type EventSink, type ExecutionScope, type RunEventStore, type SessionStore } from "../core/index.js";
+
+export * from "./skills.js";
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
@@ -22,30 +24,43 @@ export class JsonConfigStore implements ConfigStore {
 
 export class JsonSessionStore implements SessionStore {
   constructor(private readonly directory: string) {}
-  private path(id: string): string {
-    if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("Session ids may contain only letters, numbers, underscores, and hyphens.");
-    return `${this.directory}/${id}.json`;
+  private path(scope: ExecutionScope, id: string): string {
+    for (const [label, value] of [["tenant", scope.tenantId], ["project", scope.projectId], ["principal", scope.principalId], ["engagement", scope.engagementId ?? "none"], ["session", id]] as const) {
+      if (!/^[a-zA-Z0-9_-]+$/.test(value)) throw new Error(`${label} ids may contain only letters, numbers, underscores, and hyphens.`);
+    }
+    return `${this.directory}/${scope.tenantId}/${scope.projectId}/${scope.principalId}/${scope.engagementId ?? "none"}/${id}.json`;
   }
-  async get(id: string): Promise<AgentSession | undefined> { return readJson(this.path(id)); }
-  async save(session: AgentSession): Promise<void> { await atomicJson(this.path(session.id), session); }
-  async delete(id: string): Promise<void> {
+  async get(scope: ExecutionScope, id: string): Promise<AgentSession | undefined> { return readJson(this.path(scope, id)); }
+  async save(session: AgentSession): Promise<void> { await atomicJson(this.path(session.scope, session.id), session); }
+  async delete(scope: ExecutionScope, id: string): Promise<void> {
     const { rm } = await import("node:fs/promises");
-    await rm(this.path(id), { force: true });
+    await rm(this.path(scope, id), { force: true });
   }
 }
 
 export class JsonlRunEventStore implements RunEventStore, EventSink {
+  private pending: Promise<void> = Promise.resolve();
   constructor(private readonly path: string) {}
-  async append(event: AgentEvent): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    await appendFile(this.path, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+  append(event: AgentEvent): Promise<void> {
+    const write = this.pending.then(async () => {
+      await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+      await appendFile(this.path, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    });
+    this.pending = write.catch(() => undefined);
+    return write;
   }
   emit(event: AgentEvent): Promise<void> { return this.append(event); }
-  async list(runId: string): Promise<readonly AgentEvent[]> {
+  async list(scope: ExecutionScope, runId: string): Promise<readonly AgentEvent[]> {
     const contents = await readFile(this.path, "utf8").catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return "";
       throw error;
     });
-    return contents.split("\n").filter(Boolean).map((line) => JSON.parse(line) as AgentEvent).filter((event) => event.runId === runId);
+    return contents.split("\n").filter(Boolean).flatMap((line) => {
+      try { return [JSON.parse(line) as AgentEvent]; } catch { return []; }
+    }).filter((event) => event.runId === runId
+      && event.scope.tenantId === scope.tenantId
+      && event.scope.projectId === scope.projectId
+      && event.scope.principalId === scope.principalId
+      && event.scope.engagementId === scope.engagementId);
   }
 }

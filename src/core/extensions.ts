@@ -7,23 +7,31 @@ export interface AgentSkill {
   version: string;
   description: string;
   instructions: string;
-  allowedTools?: readonly string[];
+  tools: readonly string[];
+  preapprovedTools?: readonly string[];
+  license?: string;
+  compatibility?: string;
+  source?: { format: "agent-skills" | "native"; uri: string };
   artifacts?: readonly ContextArtifact[];
   metadata?: JsonObject;
 }
 
-export interface AgentBlueprint {
+interface AgentBlueprintBase {
   id: string;
   name: string;
   description?: string;
-  engineId: string;
   instructions: string;
-  skills?: readonly string[];
-  tools?: readonly string[];
-  requiredCapabilities?: readonly AgentCapability[];
+  skills: readonly string[];
+  tools: readonly string[];
+  requiredCapabilities: readonly AgentCapability[];
   maxSteps?: number;
   metadata?: JsonObject;
 }
+
+export type AgentBlueprint = AgentBlueprintBase & (
+  | { engineId: string; profileId?: never }
+  | { profileId: string; engineId?: never }
+);
 
 export interface AgentRunMiddleware {
   id: string;
@@ -87,10 +95,17 @@ export class ExtensionRegistry {
 }
 
 export function defineSkill(skill: AgentSkill): AgentSkill {
+  if (!skill.id.trim() || !skill.name.trim() || !skill.version.trim()) throw new Error("Skills require a stable id, name, and version.");
+  if (new Set(skill.tools).size !== skill.tools.length) throw new Error(`Skill ${skill.id} declares duplicate tools.`);
   return Object.freeze({ ...skill });
 }
 
 export function defineTool<I, O extends import("./types.js").JsonValue>(tool: AgentTool<I, O>): AgentTool<I, O> {
+  if (!tool.name.trim() || !tool.version.trim()) throw new Error("Tools require a stable name and version.");
+  if (tool.timeoutMs <= 0 || !Number.isFinite(tool.timeoutMs)) throw new Error(`Tool ${tool.name} requires a positive finite timeoutMs.`);
+  if ((tool.risk === "external-side-effect" || tool.risk === "privileged") && !tool.requiresApproval) {
+    throw new Error(`Tool ${tool.name} must require approval because its risk is ${tool.risk}.`);
+  }
   return Object.freeze({ ...tool });
 }
 
@@ -99,5 +114,8 @@ export function defineExtension(extension: AgentExtension): AgentExtension {
 }
 
 export function defineAgent(blueprint: AgentBlueprint): AgentBlueprint {
+  if (!blueprint.id.trim() || !blueprint.name.trim()) throw new Error("Agents require a stable id and name.");
+  if (!blueprint.instructions.trim()) throw new Error(`Agent ${blueprint.id} requires instructions.`);
+  if (new Set(blueprint.skills).size !== blueprint.skills.length || new Set(blueprint.tools).size !== blueprint.tools.length) throw new Error(`Agent ${blueprint.id} contains duplicate skill or tool ids.`);
   return Object.freeze({ ...blueprint });
 }

@@ -1,23 +1,18 @@
 # agent-v
 
-`agent-v` is a provider-neutral TypeScript engine for building inspectable, extensible agentic products. It gives an application stable contracts for models, tool-using agents, local coding runtimes, skills, approvals, artifacts, citations, sessions, events, and configuration—without making the product depend on one orchestration framework.
+`agent-v` is a provider-neutral TypeScript engine for building inspectable agentic products. It centralizes the mechanics that should be shared across products—runtime selection, scoped execution, tools, approvals, skills, sessions, events, artifacts, and testing—while leaving domain truth and user experience in each application.
 
-It is intentionally an engine, not a chatbot framework. Product truth, domain policy, retrieval, prompts, and user experience remain in the host application.
+It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## Why it exists
+## What works in 0.2
 
-Agentic products repeatedly need the same hard infrastructure:
-
-- switchable model and orchestration providers;
-- typed tools with host-controlled approval;
-- reusable, versioned skills and agent blueprints;
-- streaming lifecycle events that any UI can render;
-- anchored artifacts for source-grounded work, including pages and EPUB CFIs;
-- local CLI runtimes with honest readiness checks and bounded permissions;
-- portable session, configuration, credential, and run-ledger ports;
-- deterministic fakes for testing without API calls.
-
-`agent-v` centralizes those mechanics while keeping every product free to define what counts as evidence, what actions are safe, and what a successful workflow means.
+- Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
+- Codex CLI, OpenCode, and Claude Code runtime adapters with honest access-mode capabilities and bounded schema output. Cursor is discoverable but rejected for structured execution until its adapter can guarantee the contract.
+- Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
+- Portable skills defined in code or loaded from standard `SKILL.md` packages.
+- Tenant/project/principal execution scope on every run, approval, event, session, and model-resolution request.
+- Memory and local JSON/JSONL persistence with tenant/project isolation.
+- Deterministic fakes, provider-free tests, built-package smoke testing, and CI on Node 22 and 24.
 
 ## Install
 
@@ -25,15 +20,15 @@ Agentic products repeatedly need the same hard infrastructure:
 npm install agent-v
 ```
 
-Install `ai` only when using the optional Vercel AI SDK adapter:
+The optional AI SDK adapter requires a compatible peer:
 
 ```bash
 npm install ai
 ```
 
-Requires Node.js 22.12 or newer for the Node and local CLI adapters. The core package uses web-platform APIs and has no provider dependency.
+Node and local CLI adapters require Node.js 22.12 or newer. The core has no provider SDK dependency.
 
-## Define a custom agent
+## Define a tool, skill, and agent
 
 ```ts
 import {
@@ -45,11 +40,13 @@ import {
   defineOutput,
   defineSkill,
   defineTool,
+  localExecutionScope,
 } from "agent-v";
 
 const lookupSelection = defineTool({
   name: "lookup-selection",
-  description: "Find supporting material for the selected passage.",
+  version: "1.0.0",
+  description: "Find supporting material for a selected passage.",
   input: defineOutput({
     name: "selection-query",
     jsonSchema: {
@@ -64,70 +61,103 @@ const lookupSelection = defineTool({
       return { query };
     },
   }),
+  output: defineOutput({
+    name: "selection-results",
+    jsonSchema: { type: "object" },
+    parse(value) {
+      const matches = (value as { matches?: unknown }).matches;
+      if (!Array.isArray(matches) || !matches.every(item => typeof item === "string")) throw new Error("matches are required");
+      return { matches };
+    },
+  }),
+  risk: "read",
+  sideEffect: "none",
+  requiredPermissions: ["sources:read"],
   requiresApproval: false,
+  timeoutMs: 5_000,
   async execute({ query }) {
     return { matches: [`Host search result for: ${query}`] };
   },
 });
 
-const researchSkill = defineSkill({
+const closeReading = defineSkill({
   id: "close-reading",
   name: "Close reading",
   version: "1.0.0",
-  description: "Ground explanations in the supplied text.",
-  instructions: "Distinguish the source's claims from your interpretation and cite anchors.",
-  allowedTools: [lookupSelection.name],
+  description: "Ground explanations in supplied source material.",
+  instructions: "Distinguish source claims from interpretation and cite anchors.",
+  tools: [lookupSelection.name],
 });
 
 const reader = defineAgent({
   id: "engineering-reader",
   name: "Engineering reader",
   engineId: "primary-agent",
-  instructions: "Help the reader understand, question, and connect the material.",
-  skills: [researchSkill.id],
+  instructions: "Help the reader understand and question the material.",
+  skills: [closeReading.id],
   tools: [lookupSelection.name],
-  requiredCapabilities: ["tools", "streaming", "artifacts", "citations"],
+  requiredCapabilities: ["tools", "streaming", "artifacts"],
   maxSteps: 12,
 });
 
-const engines = new EngineRegistry(); // register an adapter as "primary-agent"
+const engines = new EngineRegistry(); // register an adapter with id "primary-agent"
 const extensions = new ExtensionRegistry().use(defineExtension({
   id: "reader-kit",
   version: "1.0.0",
-  skills: [researchSkill],
+  skills: [closeReading],
   tools: [lookupSelection],
 }));
-
 const agentV = new AgentV({ engines, extensions });
-// await agentV.run(reader, { input: { prompt, artifacts }, approvalPolicy });
+
+const scope = {
+  ...localExecutionScope("engineering-reader"),
+  permissions: ["sources:read"],
+};
+// await agentV.run(reader, { scope, sessionId: "chapter-4", input: { prompt, artifacts } });
 ```
 
-Artifacts can identify a PDF page, EPUB CFI, text range, line range, or custom source anchor. Parsers and retrieval remain replaceable application services.
+Every tool requested by an agent using skills must be allowed by those skills. Missing grants fail before provider execution; they are never silently filtered.
+
+## Model and credential resolution
+
+`AiSdkToolAgentEngine` accepts a static model, a named model registry, or a `resolveModel(selection)` function. The resolver receives the requested model id, execution scope, run id, metadata, and an opaque `credentialRef`. The host resolves that reference and constructs the provider model; `agent-v` never stores credential values.
+
+Engine profiles can select an engine/model/credential reference without changing an agent blueprint. A blueprint chooses either `engineId` or `profileId`, never both.
+
+## Skills
+
+`agent-v/node` exports `loadSkillPackage()` and `discoverSkillPackages()`. A package is a directory containing a standard `SKILL.md` plus optional `scripts/`, `references/`, and `assets/` directories. Discovery validates and indexes these resources but never executes scripts.
+
+The standard `allowed-tools` field is preserved as `preapprovedTools`, but it does not bypass host policy. It also seeds the skill's tool allowlist. Tools marked `requiresApproval` still require an `ApprovalPolicy` at execution time.
 
 ## Adapters
 
-- `agent-v/ai-sdk` implements structured generation and tool-loop agents with Vercel AI SDK 7.
-- `agent-v/local-cli` implements bounded, structured calls through Codex CLI, OpenCode, Claude Code, and extensible runtime definitions.
-- `agent-v/node` provides atomic local JSON configuration/session stores and a JSONL event ledger.
-- `agent-v/testing` provides deterministic engines and approval policies.
+- `agent-v/ai-sdk`: AI SDK structured and tool-agent engines.
+- `agent-v/local-cli`: bounded local coding runtimes and readiness probes.
+- `agent-v/node`: JSON config/session stores, JSONL event ledger, and filesystem skills.
+- `agent-v/testing`: deterministic engines and approval policies.
 
-Local CLI discovery and verification are separate. Finding an executable reports `installed`; only a bounded, schema-valid authenticated probe reports `ready`. Verification is invalidated when the detected runtime version changes.
+Local CLI discovery and readiness are separate. An executable is `installed`; only a bounded, authenticated, schema-valid probe is `ready`. OpenCode advertises workspace-write only, so a default read-only request fails closed instead of weakening the requested policy.
 
 ## Design commitments
 
-- Host applications own approval decisions and side effects.
-- Tools receive only the explicit run context and artifacts passed by the host.
-- Workspace access is explicit and defaults to read-only.
-- Runtime calls have time and output bounds and close stdin immediately.
-- Config stores credential references, never credential values.
-- Raw prompts and raw provider output are not persisted by default.
-- No framework types leak into the core contracts.
+- The host owns identity, approval decisions, credentials, and real side effects.
+- Every run carries explicit tenant, project, principal, role, permission, and data-classification scope.
+- Tools validate both model-supplied input and application-supplied output.
+- Workspace access defaults to read-only and must be enforceable by the selected runtime.
+- Normalized events and sessions are scope-isolated; raw provider objects do not leak into core contracts.
+- Product evidence, prompts, retrieval, ranking, billing, and UX stay outside the engine.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for boundaries and extension rules.
 
-## Status
+## Development
 
-`0.1.x` establishes the contracts and reference adapters. Public APIs follow semantic versioning; experimental additions will be explicitly labeled.
+```bash
+npm ci
+npm run check
+```
+
+`check` runs strict typechecking, all tests, the production build, a built-package import smoke test, and an npm package dry run.
 
 ## License
 

@@ -16,13 +16,7 @@ export interface AgentVConfig {
   profiles: readonly EngineProfile[];
   defaults: Partial<Record<EngineKind, string>>;
   execution: {
-    timeoutMs: number;
-    maxOutputBytes: number;
     maxSteps: number;
-  };
-  privacy: {
-    persistPrompts: boolean;
-    persistRawOutput: boolean;
   };
 }
 
@@ -36,8 +30,7 @@ export function defaultConfig(): AgentVConfig {
     version: 1,
     profiles: [],
     defaults: {},
-    execution: { timeoutMs: 75_000, maxOutputBytes: 8 * 1024 * 1024, maxSteps: 20 },
-    privacy: { persistPrompts: false, persistRawOutput: false },
+    execution: { maxSteps: 20 },
   };
 }
 

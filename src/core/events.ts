@@ -1,8 +1,10 @@
-import type { Citation, FailureCode, JsonObject, RunProvenance, TokenUsage } from "./types.js";
+import type { Citation, ExecutionScope, FailureCode, JsonObject, JsonValue, RunProvenance, TokenUsage } from "./types.js";
 
 interface EventBase {
   runId: string;
   timestamp: string;
+  scope: ExecutionScope;
+  traceId?: string;
 }
 
 export type AgentEvent =
@@ -12,7 +14,7 @@ export type AgentEvent =
   | (EventBase & { type: "model.started"; step: number })
   | (EventBase & { type: "model.completed"; step: number; durationMs?: number; usage?: TokenUsage })
   | (EventBase & { type: "text.delta"; delta: string })
-  | (EventBase & { type: "tool.requested"; toolCallId: string; toolName: string; input?: JsonObject })
+  | (EventBase & { type: "tool.requested"; toolCallId: string; toolName: string; input?: JsonValue })
   | (EventBase & { type: "tool.completed"; toolCallId: string; toolName: string; durationMs?: number })
   | (EventBase & { type: "tool.failed"; toolCallId: string; toolName: string; message: string })
   | (EventBase & { type: "approval.requested"; approvalId: string; toolName: string; reason: string })

@@ -54,10 +54,17 @@ export interface Citation {
 
 export interface AgentMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  parts: readonly AgentContentPart[];
   citations?: Citation[];
   metadata?: JsonObject;
 }
+
+export type AgentContentPart =
+  | { type: "text"; text: string }
+  | { type: "json"; value: JsonValue }
+  | { type: "artifact"; artifactId: string }
+  | { type: "file"; uri: string; mediaType: string; name?: string }
+  | { type: "image"; uri: string; mediaType?: string; alt?: string };
 
 export interface AgentInput {
   prompt: string;
@@ -71,6 +78,46 @@ export interface RunContext {
   sessionId?: string;
   abortSignal?: AbortSignal;
   metadata?: JsonObject;
+  scope: ExecutionScope;
+  traceId?: string;
+  idempotencyKey?: string;
+  deadline?: string;
+  budget?: RunBudget;
+  credentialRef?: string;
+  engineOptions?: JsonObject;
+}
+
+export interface ExecutionScope {
+  tenantId: string;
+  projectId: string;
+  principalId: string;
+  engagementId?: string;
+  roles: readonly string[];
+  permissions: readonly string[];
+  dataClassification: "public" | "internal" | "confidential" | "restricted";
+}
+
+export function localExecutionScope(projectId: string, principalId = "local-user"): ExecutionScope {
+  return { tenantId: "local", projectId, principalId, roles: ["owner"], permissions: ["*"], dataClassification: "internal" };
+}
+
+export function assertExecutionScope(scope: ExecutionScope): void {
+  for (const [field, value] of [["tenantId", scope?.tenantId], ["projectId", scope?.projectId], ["principalId", scope?.principalId]] as const) {
+    if (typeof value !== "string" || !value.trim()) throw new Error(`Execution scope ${field} must be a non-empty string.`);
+  }
+  if (!Array.isArray(scope.roles) || !scope.roles.every((role) => typeof role === "string" && role.length > 0)) throw new Error("Execution scope roles must contain non-empty strings.");
+  if (!Array.isArray(scope.permissions) || !scope.permissions.every((permission) => typeof permission === "string" && permission.length > 0)) throw new Error("Execution scope permissions must contain non-empty strings.");
+  if (!["public", "internal", "confidential", "restricted"].includes(scope.dataClassification)) throw new Error("Execution scope dataClassification is invalid.");
+}
+
+export function textMessage(role: AgentMessage["role"], text: string): AgentMessage {
+  return { role, parts: [{ type: "text", text }] };
+}
+
+export interface RunBudget {
+  maxTokens?: number;
+  maxCostUsd?: number;
+  maxDurationMs?: number;
 }
 
 export interface TokenUsage {
@@ -95,6 +142,9 @@ export type FailureCode =
   | "invocation-failed"
   | "output-invalid"
   | "permission-denied"
+  | "configuration-invalid"
+  | "budget-exceeded"
+  | "session-conflict"
   | "timeout"
   | "tool-failed"
   | "unsupported-capability";

@@ -10,6 +10,7 @@ import {
 } from "ai";
 import {
   AgentVError,
+  assertExecutionScope,
   eventTimestamp,
   noopEventSink,
   safeFailure,
@@ -18,8 +19,9 @@ import {
   type AgentRunStream,
   type AgentTool,
   type EngineDescriptor,
+  type ExecutionScope,
   type EventSink,
-  type JsonObject,
+  type JsonValue,
   type OutputContract,
   type StructuredGenerationRequest,
   type StructuredGenerationResult,
@@ -32,9 +34,35 @@ import {
 export interface AiSdkEngineOptions {
   id: string;
   name?: string;
-  model: LanguageModel;
+  model?: LanguageModel;
+  models?: Readonly<Record<string, LanguageModel>>;
+  resolveModel?: AiSdkModelResolver;
   provider?: string;
   modelId?: string;
+}
+
+export interface AiSdkModelSelection {
+  modelId?: string;
+  runId: string;
+  metadata?: import("../../core/index.js").JsonObject;
+  scope: import("../../core/index.js").ExecutionScope;
+  credentialRef?: string;
+  options?: import("../../core/index.js").JsonObject;
+}
+
+export type AiSdkModelResolver = (selection: AiSdkModelSelection) => LanguageModel | Promise<LanguageModel>;
+
+async function selectModel(options: AiSdkEngineOptions, selection: AiSdkModelSelection): Promise<LanguageModel> {
+  if (options.resolveModel) return options.resolveModel(selection);
+  if (selection.modelId) {
+    const registered = options.models?.[selection.modelId];
+    if (registered) return registered;
+    if (options.model && (!options.modelId || options.modelId === selection.modelId)) return options.model;
+    throw new AgentVError("engine-unavailable", `No AI SDK model named ${selection.modelId} is registered.`);
+  }
+  if (options.model) return options.model;
+  if (options.modelId && options.models?.[options.modelId]) return options.models[options.modelId]!;
+  throw new AgentVError("configuration-invalid", `AI SDK engine ${options.id} requires a default model or model resolver.`);
 }
 
 function contractSchema<T>(contract: OutputContract<T>) {
@@ -50,7 +78,13 @@ function contractSchema<T>(contract: OutputContract<T>) {
 }
 
 function formatInput(input: AgentInput): string {
-  const history = input.messages?.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
+  const history = input.messages?.map((message) => `${message.role.toUpperCase()}: ${message.parts.map((part) => {
+    if (part.type === "text") return part.text;
+    if (part.type === "json") return JSON.stringify(part.value);
+    if (part.type === "artifact") return `[Artifact ${part.artifactId}]`;
+    if (part.type === "image") return `[Image ${part.uri}${part.alt ? `: ${part.alt}` : ""}]`;
+    return `[File ${part.name ?? part.uri} (${part.mediaType})]`;
+  }).join("\n")}`).join("\n\n");
   const artifacts = input.artifacts?.map((artifact) => [
     `Artifact: ${artifact.title ?? artifact.id}`,
     `URI: ${artifact.uri}`,
@@ -81,6 +115,15 @@ async function emit(sink: EventSink, event: AgentEvent): Promise<void> {
   await sink.emit(event);
 }
 
+function eventBase(request: { scope: ExecutionScope; traceId?: string }, runId: string) {
+  return {
+    runId,
+    timestamp: eventTimestamp(),
+    scope: request.scope,
+    ...(request.traceId ? { traceId: request.traceId } : {}),
+  };
+}
+
 function descriptor(options: AiSdkEngineOptions, kind: "structured-model" | "tool-agent"): EngineDescriptor {
   return {
     id: options.id,
@@ -89,29 +132,33 @@ function descriptor(options: AiSdkEngineOptions, kind: "structured-model" | "too
     provider: options.provider,
     model: options.modelId,
     capabilities: kind === "structured-model"
-      ? ["structured-output", "streaming", "artifacts"]
-      : ["structured-output", "streaming", "tools", "tool-approval", "skills", "artifacts", "citations"],
+      ? ["structured-output", "artifacts"]
+      : ["structured-output", "streaming", "tools", "tool-approval", "artifacts"],
   };
 }
 
 export class AiSdkStructuredModelEngine {
   readonly descriptor: EngineDescriptor;
-  private readonly model: LanguageModel;
+  private readonly options: AiSdkEngineOptions;
 
   constructor(options: AiSdkEngineOptions) {
-    this.model = options.model;
+    if (!options.model && !options.resolveModel && !options.models) throw new AgentVError("configuration-invalid", `AI SDK engine ${options.id} requires a model, model registry, or resolver.`);
+    this.options = options;
     this.descriptor = descriptor(options, "structured-model");
   }
 
   async generate<T>(request: StructuredGenerationRequest<T>, sink: EventSink = noopEventSink): Promise<StructuredGenerationResult<T>> {
+    assertExecutionScope(request.scope);
     const runId = request.runId ?? crypto.randomUUID();
     const started = Date.now();
-    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: request.model ?? this.descriptor.model };
-    await emit(sink, { type: "run.started", runId, timestamp: eventTimestamp(), provenance });
-    await emit(sink, { type: "model.started", runId, timestamp: eventTimestamp(), step: 1 });
+    const modelId = request.model ?? this.descriptor.model;
+    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: modelId };
+    await emit(sink, { ...eventBase(request, runId), type: "run.started", provenance });
     try {
+      const model = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
+      await emit(sink, { ...eventBase(request, runId), type: "model.started", step: 1 });
       const result = await generateText({
-        model: this.model,
+        model,
         system: request.input.instructions,
         prompt: formatInput(request.input),
         output: Output.object({
@@ -124,12 +171,12 @@ export class AiSdkStructuredModelEngine {
       });
       const usage = usageOf(result.usage);
       const durationMs = Date.now() - started;
-      await emit(sink, { type: "model.completed", runId, timestamp: eventTimestamp(), step: 1, durationMs, usage });
-      await emit(sink, { type: "run.completed", runId, timestamp: eventTimestamp(), durationMs, usage });
+      await emit(sink, { ...eventBase(request, runId), type: "model.completed", step: 1, durationMs, usage });
+      await emit(sink, { ...eventBase(request, runId), type: "run.completed", durationMs, usage });
       return { runId, output: result.output, provenance, durationMs, usage };
     } catch (error) {
       const failure = safeFailure(error);
-      await emit(sink, { type: "run.failed", runId, timestamp: eventTimestamp(), code: failure.code, message: failure.message, retryable: failure.retryable });
+      await emit(sink, { ...eventBase(request, runId), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });
       throw error;
     }
   }
@@ -142,30 +189,67 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
     execute: async (rawInput, options) => {
       const input = definition.input.parse(rawInput);
       const toolCallId = options.toolCallId;
-      await emit(sink, { type: "tool.requested", runId, timestamp: eventTimestamp(), toolCallId, toolName: definition.name, input: rawInput as JsonObject });
+      await emit(sink, { ...eventBase(request, runId), type: "tool.requested", toolCallId, toolName: definition.name, input: rawInput as JsonValue });
       const started = Date.now();
       try {
+        const requiredPermissions = definition.requiredPermissions;
+        const grantedPermissions = new Set(request.scope.permissions);
+        const missingPermissions = grantedPermissions.has("*") ? [] : requiredPermissions.filter((permission) => !grantedPermissions.has(permission));
+        if (missingPermissions.length) {
+          throw new AgentVError("permission-denied", `Tool ${definition.name} requires permissions: ${missingPermissions.join(", ")}.`);
+        }
         if (definition.requiresApproval) {
           if (!request.approvalPolicy) throw new AgentVError("permission-denied", `Tool ${definition.name} requires an approval policy.`);
           const approvalId = crypto.randomUUID();
           const reason = `${definition.name} requires explicit approval before execution.`;
-          await emit(sink, { type: "approval.requested", runId, timestamp: eventTimestamp(), approvalId, toolName: definition.name, reason });
-          const decision = await request.approvalPolicy.decide({ id: approvalId, runId, toolName: definition.name, input, reason });
-          await emit(sink, { type: "approval.resolved", runId, timestamp: eventTimestamp(), approvalId, decision });
+          await emit(sink, { ...eventBase(request, runId), type: "approval.requested", approvalId, toolName: definition.name, reason });
+          const decision = await request.approvalPolicy.decide({
+            id: approvalId,
+            runId,
+            toolName: definition.name,
+            input,
+            reason,
+            toolVersion: definition.version,
+            risk: definition.risk,
+            sideEffect: definition.sideEffect,
+            requiredPermissions,
+            scope: request.scope,
+            metadata: request.metadata,
+          });
+          await emit(sink, { ...eventBase(request, runId), type: "approval.resolved", approvalId, decision });
           if (decision !== "approved") throw new AgentVError("permission-denied", `Tool ${definition.name} was denied.`);
         }
-        const output = await definition.execute(input, {
+        const timeoutController = new AbortController();
+        const timeout = setTimeout(() => timeoutController.abort(), definition.timeoutMs);
+        const signals = [options.abortSignal, request.abortSignal, timeoutController.signal].filter((signal): signal is AbortSignal => Boolean(signal));
+        const abortSignal = signals.length ? AbortSignal.any(signals) : undefined;
+        const execution = Promise.resolve(definition.execute(input, {
           runId,
           sessionId: request.sessionId,
-          abortSignal: options.abortSignal ?? request.abortSignal,
+          abortSignal,
           metadata: request.metadata,
+          scope: request.scope,
           toolCallId,
           artifacts: request.input.artifacts ?? [],
-        });
-        await emit(sink, { type: "tool.completed", runId, timestamp: eventTimestamp(), toolCallId, toolName: definition.name, durationMs: Date.now() - started });
+        }));
+        let rawOutput: unknown;
+        try {
+          rawOutput = await Promise.race([
+            execution,
+            new Promise<never>((_, reject) => abortSignal?.addEventListener("abort", () => reject(
+              timeoutController.signal.aborted
+                ? new AgentVError("timeout", `Tool ${definition.name} exceeded its ${definition.timeoutMs}ms time limit.`, { retryable: true })
+                : new AgentVError("cancelled", `Tool ${definition.name} was cancelled.`),
+            ), { once: true })),
+          ]);
+        } finally {
+          clearTimeout(timeout);
+        }
+        const output = definition.output.parse(rawOutput);
+        await emit(sink, { ...eventBase(request, runId), type: "tool.completed", toolCallId, toolName: definition.name, durationMs: Date.now() - started });
         return output;
       } catch (error) {
-        await emit(sink, { type: "tool.failed", runId, timestamp: eventTimestamp(), toolCallId, toolName: definition.name, message: error instanceof Error ? error.message : "Tool execution failed." });
+        await emit(sink, { ...eventBase(request, runId), type: "tool.failed", toolCallId, toolName: definition.name, message: safeFailure(error).message });
         throw error;
       }
     },
@@ -181,22 +265,23 @@ interface AgentInvocation<T> {
 
 export class AiSdkToolAgentEngine implements ToolAgentEngine {
   readonly descriptor: EngineDescriptor;
-  private readonly model: LanguageModel;
+  private readonly options: AiSdkEngineOptions;
 
   constructor(options: AiSdkEngineOptions) {
-    this.model = options.model;
+    if (!options.model && !options.resolveModel && !options.models) throw new AgentVError("configuration-invalid", `AI SDK engine ${options.id} requires a model, model registry, or resolver.`);
+    this.options = options;
     this.descriptor = descriptor(options, "tool-agent");
   }
 
-  private async generate<T>(request: ToolAgentRequest<T>, sink: EventSink, runId: string): Promise<AgentInvocation<T>> {
+  private async generate<T>(request: ToolAgentRequest<T>, sink: EventSink, runId: string, model: LanguageModel): Promise<AgentInvocation<T>> {
     const tools = toAiTools(request.tools ?? [], request as ToolAgentRequest<unknown>, sink, runId);
     const common = {
-      model: this.model,
+      model,
       instructions: request.input.instructions,
       tools,
       stopWhen: isStepCount(request.maxSteps ?? 20),
-      onStepStart: async ({ stepNumber }: { stepNumber: number }) => emit(sink, { type: "model.started", runId, timestamp: eventTimestamp(), step: stepNumber + 1 }),
-      onStepEnd: async ({ stepNumber, usage }: { stepNumber: number; usage: unknown }) => emit(sink, { type: "model.completed", runId, timestamp: eventTimestamp(), step: stepNumber + 1, usage: usageOf(usage) }),
+      onStepStart: async ({ stepNumber }: { stepNumber: number }) => emit(sink, { ...eventBase(request, runId), type: "model.started", step: stepNumber + 1 }),
+      onStepEnd: async ({ stepNumber, usage }: { stepNumber: number; usage: unknown }) => emit(sink, { ...eventBase(request, runId), type: "model.completed", step: stepNumber + 1, usage: usageOf(usage) }),
     };
     if (request.output) {
       const agent = new ToolLoopAgent({
@@ -212,23 +297,27 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
   }
 
   async run<T = string>(request: ToolAgentRequest<T>, sink: EventSink = noopEventSink): Promise<ToolAgentResult<T>> {
+    assertExecutionScope(request.scope);
     const runId = request.runId ?? crypto.randomUUID();
     const started = Date.now();
-    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: request.model ?? this.descriptor.model };
-    await emit(sink, { type: "run.started", runId, timestamp: eventTimestamp(), provenance });
+    const modelId = request.model ?? this.descriptor.model;
+    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: modelId };
+    await emit(sink, { ...eventBase(request, runId), type: "run.started", provenance });
     try {
-      const invocation = await this.generate(request, sink, runId);
+      const model = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
+      const invocation = await this.generate(request, sink, runId, model);
       const durationMs = Date.now() - started;
-      await emit(sink, { type: "run.completed", runId, timestamp: eventTimestamp(), durationMs, usage: invocation.usage });
+      await emit(sink, { ...eventBase(request, runId), type: "run.completed", durationMs, usage: invocation.usage });
       return { runId, ...invocation, provenance, durationMs };
     } catch (error) {
       const failure = safeFailure(error);
-      await emit(sink, { type: "run.failed", runId, timestamp: eventTimestamp(), code: failure.code, message: failure.message, retryable: failure.retryable });
+      await emit(sink, { ...eventBase(request, runId), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });
       throw error;
     }
   }
 
   async stream<T = string>(request: ToolAgentRequest<T>, sink: EventSink = noopEventSink): Promise<AgentRunStream<T>> {
+    assertExecutionScope(request.scope);
     const queue = new AsyncEventQueue();
     const combined: EventSink = {
       async emit(event) {
@@ -238,36 +327,38 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
     };
     const runId = request.runId ?? crypto.randomUUID();
     const started = Date.now();
-    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: request.model ?? this.descriptor.model };
+    const modelId = request.model ?? this.descriptor.model;
+    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: modelId };
     const result = (async (): Promise<ToolAgentResult<T>> => {
-      await emit(combined, { type: "run.started", runId, timestamp: eventTimestamp(), provenance });
+      await emit(combined, { ...eventBase(request, runId), type: "run.started", provenance });
       try {
+        const model = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
         const tools = toAiTools(request.tools ?? [], request as ToolAgentRequest<unknown>, combined, runId);
         const common = {
-          model: this.model,
+          model,
           instructions: request.input.instructions,
           tools,
           stopWhen: isStepCount(request.maxSteps ?? 20),
-          onStepStart: async ({ stepNumber }: { stepNumber: number }) => emit(combined, { type: "model.started", runId, timestamp: eventTimestamp(), step: stepNumber + 1 }),
-          onStepEnd: async ({ stepNumber, usage }: { stepNumber: number; usage: unknown }) => emit(combined, { type: "model.completed", runId, timestamp: eventTimestamp(), step: stepNumber + 1, usage: usageOf(usage) }),
+          onStepStart: async ({ stepNumber }: { stepNumber: number }) => emit(combined, { ...eventBase(request, runId), type: "model.started", step: stepNumber + 1 }),
+          onStepEnd: async ({ stepNumber, usage }: { stepNumber: number; usage: unknown }) => emit(combined, { ...eventBase(request, runId), type: "model.completed", step: stepNumber + 1, usage: usageOf(usage) }),
         };
         const agent = request.output
           ? new ToolLoopAgent({ ...common, output: Output.object({ schema: contractSchema(request.output), name: request.output.name, description: request.output.description }) })
           : new ToolLoopAgent(common);
         const streamed = await agent.stream({ prompt: formatInput(request.input), abortSignal: request.abortSignal });
         for await (const delta of streamed.textStream) {
-          await emit(combined, { type: "text.delta", runId, timestamp: eventTimestamp(), delta });
+          await emit(combined, { ...eventBase(request, runId), type: "text.delta", delta });
         }
         const text = await streamed.text;
         const output = request.output ? await streamed.output as T : text as T;
         const steps = (await streamed.steps).length;
         const usage = usageOf(await streamed.usage);
         const durationMs = Date.now() - started;
-        await emit(combined, { type: "run.completed", runId, timestamp: eventTimestamp(), durationMs, usage });
+        await emit(combined, { ...eventBase(request, runId), type: "run.completed", durationMs, usage });
         return { runId, output, text, steps, provenance, durationMs, usage };
       } catch (error) {
         const failure = safeFailure(error);
-        await emit(combined, { type: "run.failed", runId, timestamp: eventTimestamp(), code: failure.code, message: failure.message, retryable: failure.retryable });
+        await emit(combined, { ...eventBase(request, runId), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });
         throw error;
       }
     })().finally(() => queue.close());

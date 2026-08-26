@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   AgentVError,
+  assertExecutionScope,
   eventTimestamp,
   noopEventSink,
   safeFailure,
@@ -13,6 +14,7 @@ import {
   type EngineDescriptor,
   type EventSink,
   type RuntimeReadiness,
+  localExecutionScope,
 } from "../../core/index.js";
 import { builtInRuntimes, type LocalRuntimeDefinition } from "./definitions.js";
 import { classifyProcessFailure, parseRuntimeOutput } from "./parsing.js";
@@ -60,7 +62,7 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
       id: options.id ?? "local-cli",
       name: "Local CLI runtimes",
       kind: "coding-runtime",
-      capabilities: ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"],
+      capabilities: ["structured-output", "local-workspace", "artifacts"],
     };
   }
 
@@ -98,7 +100,7 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
       name: "runtime-readiness",
       jsonSchema: {
         type: "object",
-        properties: { status: { const: "ready" }, evidenceLabel: { const: "runtime-probe" } },
+        properties: { status: { type: "string", enum: ["ready"] }, evidenceLabel: { type: "string", enum: ["runtime-probe"] } },
         required: ["status", "evidenceLabel"],
         additionalProperties: false,
       },
@@ -113,11 +115,13 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
       await this.run({
         runtimeId,
         runtimeModel,
+        scope: localExecutionScope("runtime-readiness"),
         input: {
           prompt: "Return exactly the requested readiness object.",
           artifacts: [{ id: "runtime-probe", uri: "agent-v://runtime-probe", mediaType: "application/json", content: "Runtime readiness evidence label: runtime-probe" }],
         },
         output,
+        workspaceAccess: this.runtime(runtimeId).capabilities.includes("read-only-workspace") ? "read-only" : "workspace-write",
         maxAttempts: 1,
       });
       readiness = { ...installed, verification: "ready", checkedAt: new Date().toISOString(), durationMs: Date.now() - started, detail: "Authenticated and returned schema-valid bounded output." };
@@ -137,6 +141,7 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
   }
 
   async run<T>(request: CodingRuntimeRequest<T>, sink: EventSink = noopEventSink): Promise<CodingRuntimeResult<T>> {
+    assertExecutionScope(request.scope);
     const runtime = this.runtime(request.runtimeId);
     if (!runtime.capabilities.includes("structured-output")) {
       throw new AgentVError("unsupported-capability", `${runtime.name} does not advertise reliable structured output.`);
@@ -144,15 +149,17 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
     const runId = request.runId ?? crypto.randomUUID();
     const started = Date.now();
     const workspaceAccess = request.workspaceAccess ?? "read-only";
-    if (workspaceAccess === "workspace-write" && !runtime.capabilities.includes("workspace-write")) {
-      throw new AgentVError("unsupported-capability", `${runtime.name} does not support workspace writes through this adapter.`);
+    const accessCapability = workspaceAccess === "read-only" ? "read-only-workspace" : "workspace-write";
+    if (!runtime.capabilities.includes(accessCapability)) {
+      throw new AgentVError("unsupported-capability", `${runtime.name} does not support ${workspaceAccess} access through this adapter.`);
     }
     const temporary = await mkdtemp(join(tmpdir(), "agent-v-runtime-"));
     const workspace = request.workspacePath ? resolve(request.workspacePath) : temporary;
     const outputFile = join(temporary, "last-message.json");
     const schemaFile = join(temporary, "output-schema.json");
     const provenance = { engineId: this.descriptor.id, runtime: runtime.id, model: request.runtimeModel ?? "runtime default" };
-    await sink.emit({ type: "run.started", runId, timestamp: eventTimestamp(), provenance });
+    const eventBase = () => ({ runId, timestamp: eventTimestamp(), scope: request.scope, ...(request.traceId ? { traceId: request.traceId } : {}) });
+    await sink.emit({ ...eventBase(), type: "run.started", provenance });
     try {
       await writeFile(schemaFile, `${JSON.stringify(request.output.jsonSchema, null, 2)}\n`, { mode: 0o600 });
       const guardrail = [
@@ -168,7 +175,7 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
       const maxAttempts = request.maxAttempts ?? 2;
       let previousError: unknown;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        await sink.emit({ type: "model.started", runId, timestamp: eventTimestamp(), step: attempt });
+        await sink.emit({ ...eventBase(), type: "model.started", step: attempt });
         const prompt = attempt === 1 ? guardrail : `${guardrail}\n\nThe previous response was invalid. Return one complete schema-valid JSON value and nothing else.`;
         const args = runtime.buildInvocation({ prompt, workspace, outputFile, outputSchemaFile: schemaFile, model: request.runtimeModel, workspaceAccess });
         let processResult;
@@ -182,8 +189,8 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
           const normalized = parseRuntimeOutput(runtime.id, processResult.stdout, outputFileContent);
           const output = request.output.parse(normalized.value);
           const durationMs = Date.now() - started;
-          await sink.emit({ type: "model.completed", runId, timestamp: eventTimestamp(), step: attempt });
-          await sink.emit({ type: "run.completed", runId, timestamp: eventTimestamp(), durationMs });
+          await sink.emit({ ...eventBase(), type: "model.completed", step: attempt });
+          await sink.emit({ ...eventBase(), type: "run.completed", durationMs });
           return { runId, output, provenance, durationMs, runtimeId: runtime.id, activityCount: normalized.activityCount, attempts: attempt };
         } catch (error) {
           previousError = error instanceof AgentVError ? error : new AgentVError("output-invalid", "The runtime output did not match the required contract.", { cause: error });
@@ -193,7 +200,7 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
       throw previousError;
     } catch (error) {
       const failure = safeFailure(error);
-      await sink.emit({ type: "run.failed", runId, timestamp: eventTimestamp(), code: failure.code, message: failure.message, retryable: failure.retryable });
+      await sink.emit({ ...eventBase(), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });
       throw error;
     } finally {
       await rm(temporary, { recursive: true, force: true });
