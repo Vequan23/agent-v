@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "packageVersion": "0.4.0",
+  "node": ">=22.12",
+  "adapters": {
+    "ai-sdk": {
+      "packageRange": ">=7.0.0 <8",
+      "strategies": [
+        "ai-sdk-v7-structured-model",
+        "ai-sdk-v7-tool-agent"
+      ]
+    },
+    "ollama": {
+      "aiSdkOllamaRange": ">=4.2.0 <5",
+      "aiSdkRange": ">=7.0.0 <8",
+      "strategy": "ai-sdk-ollama-v4-native-chat",
+      "versionPolicy": "inspect-daemon-and-models-before-each-resolution"
+    },
+    "local-cli": {
+      "versionPolicy": "detect-before-each-run-and-invalidate-readiness-on-change",
+      "runtimes": {
+        "codex": {
+          "strategy": "codex-exec-json-v1",
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"]
+        },
+        "opencode": {
+          "strategy": "opencode-run-json-v1",
+          "capabilities": ["structured-output", "local-workspace", "workspace-write", "artifacts"]
+        },
+        "claude-code": {
+          "strategy": "claude-print-json-v1",
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "artifacts"]
+        },
+        "cursor": {
+          "strategy": "cursor-print-json-v1",
+          "capabilities": ["local-workspace", "workspace-write", "artifacts"]
+        }
+      }
+    }
+  }
+}

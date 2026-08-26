@@ -8,3 +8,4 @@ export * from "./output.js";
 export * from "./registry.js";
 export * from "./memory.js";
 export * from "./types.js";
+export * from "./version.js";

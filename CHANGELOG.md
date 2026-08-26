@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Add a packaged `agent-v` Agent Skill and repository guidance for coding agents.
+- Add executable consumer examples compiled against the built package exports.
+- Add `agent-v doctor` with safe dependency, CLI, authentication-probe, and Ollama readiness reporting.
+- Add machine-readable compatibility metadata synchronized with executable runtime strategies.
+- Add the package version constant and strengthen public API guidance for automated consumers.
+
 ## 0.3.0
 
 - Record an adapter strategy on every run and the detected executable version on local CLI runs.

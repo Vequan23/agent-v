@@ -73,6 +73,7 @@ export interface AgentInput {
   artifacts?: readonly ContextArtifact[];
 }
 
+/** Host-owned identity, limits, and correlation data required by every execution. */
 export interface RunContext {
   runId?: string;
   sessionId?: string;
@@ -87,6 +88,10 @@ export interface RunContext {
   engineOptions?: JsonObject;
 }
 
+/**
+ * Authority and isolation boundary for a run.
+ * Store implementations must isolate at least tenant, project, principal, and engagement.
+ */
 export interface ExecutionScope {
   tenantId: string;
   projectId: string;
@@ -97,10 +102,12 @@ export interface ExecutionScope {
   dataClassification: "public" | "internal" | "confidential" | "restricted";
 }
 
+/** Creates a wildcard-permission scope for genuinely single-user local applications. */
 export function localExecutionScope(projectId: string, principalId = "local-user"): ExecutionScope {
   return { tenantId: "local", projectId, principalId, roles: ["owner"], permissions: ["*"], dataClassification: "internal" };
 }
 
+/** Validates the structural invariants required for execution isolation. */
 export function assertExecutionScope(scope: ExecutionScope): void {
   for (const [field, value] of [["tenantId", scope?.tenantId], ["projectId", scope?.projectId], ["principalId", scope?.principalId]] as const) {
     if (typeof value !== "string" || !value.trim()) throw new Error(`Execution scope ${field} must be a non-empty string.`);
@@ -126,6 +133,7 @@ export interface TokenUsage {
   total?: number;
 }
 
+/** Auditable identity of the adapter, provider/model, and runtime used for a run. */
 export interface RunProvenance {
   engineId: string;
   adapterStrategy: string;
@@ -158,6 +166,7 @@ export interface SafeFailure {
   cause?: unknown;
 }
 
+/** Discovery and bounded-probe evidence for a local coding runtime. */
 export interface RuntimeReadiness {
   runtimeId: string;
   availability: "missing" | "installed" | "setup-required";

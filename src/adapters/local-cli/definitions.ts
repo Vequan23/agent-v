@@ -9,6 +9,7 @@ export interface RuntimeInvocationInput {
   workspaceAccess: "read-only" | "workspace-write";
 }
 
+/** Version-detectable CLI invocation and capability strategy. */
 export interface LocalRuntimeDefinition {
   id: string;
   name: string;
@@ -19,6 +20,7 @@ export interface LocalRuntimeDefinition {
   buildInvocation(input: RuntimeInvocationInput): readonly string[];
 }
 
+/** Built-in runtime strategies; compatibility.json must remain synchronized with this list. */
 export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "codex",

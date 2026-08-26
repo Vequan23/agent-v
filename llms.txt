@@ -1,0 +1,13 @@
+# agent-v
+
+> Provider-neutral TypeScript execution contracts for scoped agents, validated tools, approvals, AI SDK models, local coding runtimes, Ollama, sessions, events, and portable skills.
+
+## Canonical guidance
+
+- README.md — supported consumer surface and installation
+- ARCHITECTURE.md — dependency, authority, and product boundaries
+- compatibility.json — machine-readable adapter strategies and dependency ranges
+- skills/agent-v/SKILL.md — portable coding-agent integration instructions
+- examples/ — compiled and executed consumer patterns
+
+Do not infer APIs from other agent frameworks. Verify imports against the installed package exports and type declarations.

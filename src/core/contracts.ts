@@ -38,6 +38,10 @@ export interface ToolExecutionContext extends RunContext {
   artifacts: readonly ContextArtifact[];
 }
 
+/**
+ * Host capability exposed to a model.
+ * Both model-supplied input and implementation-supplied output are validated.
+ */
 export interface AgentTool<I = unknown, O = JsonValue> {
   name: string;
   version: string;
@@ -69,6 +73,7 @@ export interface ApprovalRequest {
   scope: ExecutionScope;
 }
 
+/** Host authority that resolves an approval request before a guarded tool executes. */
 export interface ApprovalPolicy {
   decide(request: ApprovalRequest): Promise<"approved" | "denied">;
 }
@@ -97,6 +102,7 @@ export interface AgentRunStream<T> {
   result: Promise<ToolAgentResult<T>>;
 }
 
+/** Bounded model/tool-loop engine with normalized run and streaming results. */
 export interface ToolAgentEngine {
   readonly descriptor: EngineDescriptor;
   run<T = string>(request: ToolAgentRequest<T>, events?: EventSink): Promise<ToolAgentResult<T>>;
@@ -119,6 +125,7 @@ export interface CodingRuntimeResult<T> extends StructuredGenerationResult<T> {
   attempts: number;
 }
 
+/** Installed coding-agent runtime operating against an explicitly scoped workspace. */
 export interface CodingRuntimeEngine {
   readonly descriptor: EngineDescriptor;
   inspect(runtimeId: string): Promise<RuntimeReadiness>;
@@ -136,12 +143,14 @@ export interface AgentSession {
   scope: ExecutionScope;
 }
 
+/** Scope-isolated conversational state port. */
 export interface SessionStore {
   get(scope: ExecutionScope, id: string): Promise<AgentSession | undefined>;
   save(session: AgentSession): Promise<void>;
   delete(scope: ExecutionScope, id: string): Promise<void>;
 }
 
+/** Scope-isolated normalized execution ledger. */
 export interface RunEventStore {
   append(event: AgentEvent): Promise<void>;
   list(scope: ExecutionScope, runId: string): Promise<readonly AgentEvent[]>;

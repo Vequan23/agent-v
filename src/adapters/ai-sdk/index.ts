@@ -32,6 +32,7 @@ import {
   type TokenUsage,
 } from "../../core/index.js";
 
+/** Provider/model sources and provenance defaults for an AI SDK engine. */
 export interface AiSdkEngineOptions {
   id: string;
   name?: string;
@@ -45,6 +46,7 @@ export interface AiSdkEngineOptions {
   runtimeVersion?: string;
 }
 
+/** Host context supplied whenever an AI SDK model is resolved for a run. */
 export interface AiSdkModelSelection {
   modelId?: string;
   runId: string;
@@ -54,11 +56,13 @@ export interface AiSdkModelSelection {
   options?: import("../../core/index.js").JsonObject;
 }
 
+/** Model plus authoritative provenance discovered during resolution. */
 export interface AiSdkResolvedModel {
   model: LanguageModel;
   provenance?: Partial<Omit<RunProvenance, "engineId">>;
 }
 
+/** Per-run model resolver used for provider, tenant, or credential selection. */
 export type AiSdkModelResolver = (selection: AiSdkModelSelection) => LanguageModel | AiSdkResolvedModel | Promise<LanguageModel | AiSdkResolvedModel>;
 
 function resolvedModel(model: LanguageModel | AiSdkResolvedModel): AiSdkResolvedModel {

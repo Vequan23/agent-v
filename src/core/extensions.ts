@@ -1,6 +1,7 @@
 import type { AgentTool, ToolAgentRequest } from "./contracts.js";
 import type { AgentCapability, ContextArtifact, JsonObject } from "./types.js";
 
+/** Portable, versioned guidance with a constraining tool allowlist. */
 export interface AgentSkill {
   id: string;
   name: string;
@@ -28,6 +29,7 @@ interface AgentBlueprintBase {
   metadata?: JsonObject;
 }
 
+/** Application-owned composition selecting exactly one engine or configured profile. */
 export type AgentBlueprint = AgentBlueprintBase & (
   | { engineId: string; profileId?: never }
   | { profileId: string; engineId?: never }
@@ -94,12 +96,14 @@ export class ExtensionRegistry {
   }
 }
 
+/** Defines and validates a portable agent skill. */
 export function defineSkill(skill: AgentSkill): AgentSkill {
   if (!skill.id.trim() || !skill.name.trim() || !skill.version.trim()) throw new Error("Skills require a stable id, name, and version.");
   if (new Set(skill.tools).size !== skill.tools.length) throw new Error(`Skill ${skill.id} declares duplicate tools.`);
   return Object.freeze({ ...skill });
 }
 
+/** Defines a validated tool and enforces approval for high-risk classifications. */
 export function defineTool<I, O extends import("./types.js").JsonValue>(tool: AgentTool<I, O>): AgentTool<I, O> {
   if (!tool.name.trim() || !tool.version.trim()) throw new Error("Tools require a stable name and version.");
   if (tool.timeoutMs <= 0 || !Number.isFinite(tool.timeoutMs)) throw new Error(`Tool ${tool.name} requires a positive finite timeoutMs.`);
@@ -113,6 +117,7 @@ export function defineExtension(extension: AgentExtension): AgentExtension {
   return Object.freeze({ ...extension });
 }
 
+/** Defines and validates an application-owned agent blueprint. */
 export function defineAgent(blueprint: AgentBlueprint): AgentBlueprint {
   if (!blueprint.id.trim() || !blueprint.name.trim()) throw new Error("Agents require a stable id and name.");
   if (!blueprint.instructions.trim()) throw new Error(`Agent ${blueprint.id} requires instructions.`);

@@ -4,7 +4,7 @@
 
 It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## What works in 0.3
+## What works in 0.4
 
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
 - Codex CLI, OpenCode, and Claude Code runtime adapters with honest access-mode capabilities and bounded schema output. Cursor is discoverable but rejected for structured execution until its adapter can guarantee the contract.
@@ -14,6 +14,7 @@ It is an engine, not a chatbot framework and not a repository of every product-s
 - Tenant/project/principal execution scope on every run, approval, event, session, and model-resolution request.
 - Memory and local JSON/JSONL persistence with tenant/project isolation.
 - Deterministic fakes, provider-free tests, built-package smoke testing, and CI on Node 22 and 24.
+- Packaged guidance for coding agents, executable consumer examples, compatibility metadata, and a safe readiness doctor.
 
 ## Install
 
@@ -168,6 +169,49 @@ The standard `allowed-tools` field is preserved as `preapprovedTools`, but it do
 
 Local CLI discovery and readiness are separate. An executable is `installed`; only a bounded, authenticated, schema-valid probe is `ready`. OpenCode advertises workspace-write only, so a default read-only request fails closed instead of weakening the requested policy.
 
+## Agent-readable integration guidance
+
+The package ships four synchronized sources for coding agents:
+
+- `AGENTS.md` explains repository boundaries and contribution invariants.
+- `skills/agent-v/SKILL.md` is a portable integration skill with precise subpath routing.
+- `examples/` contains consumer programs compiled and executed against the built package exports.
+- `compatibility.json` records dependency ranges, adapter strategies, runtime capabilities, and version policies.
+- `llms.txt` gives documentation crawlers a short map to the canonical sources.
+
+Agents should start with the closest executable example and verify against installed type declarations. They should not infer `agent-v` methods from LangChain, the AI SDK, or older examples.
+
+Locate the packaged portable skill from an installed dependency with:
+
+```bash
+npx agent-v skill-path
+```
+
+The consuming harness can copy or link that directory into its configured Agent Skills location; discovery locations are owned by the harness, not guessed by `agent-v`.
+
+## Doctor
+
+Run safe discovery without provider inference:
+
+```bash
+npx agent-v doctor
+npx agent-v doctor --json
+```
+
+Run an authenticated CLI probe only by naming the runtime explicitly:
+
+```bash
+npx agent-v doctor --runtime codex --probe
+```
+
+Require an Ollama server and model:
+
+```bash
+npx agent-v doctor --ollama-url http://127.0.0.1:11434 --ollama-model <installed-model>
+```
+
+The default command does not start services, download models, or make model inference calls. Live CLI probing may use configured credentials, so `--probe` requires an explicit `--runtime`.
+
 ## Design commitments
 
 - The host owns identity, approval decisions, credentials, and real side effects.
@@ -186,7 +230,7 @@ npm ci
 npm run check
 ```
 
-`check` runs strict typechecking, all tests, the production build, a built-package import smoke test, and an npm package dry run.
+`check` runs strict typechecking, all tests, the production build, consumer example compilation and execution, built-package and CLI smoke tests, and an npm package dry run.
 
 ## License
 

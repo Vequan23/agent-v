@@ -16,6 +16,7 @@ import {
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434";
 const ADAPTER_STRATEGY = "ai-sdk-ollama-v4-native-chat";
 
+/** Connection, readiness, and model settings for the optional Ollama adapter. */
 export interface OllamaAdapterOptions {
   id?: string;
   name?: string;
@@ -34,6 +35,7 @@ export interface OllamaInspectionContext {
   metadata?: JsonObject;
 }
 
+/** Safe readiness evidence from the Ollama version and model-list endpoints. */
 export interface OllamaReadiness {
   providerId: "ollama";
   availability: "ready" | "unreachable" | "setup-required";
@@ -83,6 +85,7 @@ async function jsonRequest(fetcher: typeof globalThis.fetch, url: string, header
   return response.json();
 }
 
+/** Inspects daemon reachability, version, and installed models without running inference. */
 export async function inspectOllama(options: OllamaAdapterOptions = {}, _context: OllamaInspectionContext = {}): Promise<OllamaReadiness> {
   const baseURL = baseURLOf(options);
   const started = Date.now();
@@ -131,6 +134,7 @@ export async function inspectOllama(options: OllamaAdapterOptions = {}, _context
   }
 }
 
+/** Creates a per-run resolver that fails closed on daemon or installed-model drift. */
 export function createOllamaModelResolver(options: OllamaAdapterOptions = {}): AiSdkModelResolver {
   return async (selection) => {
     const modelId = selection.modelId ?? options.defaultModel;
@@ -157,6 +161,7 @@ export function createOllamaModelResolver(options: OllamaAdapterOptions = {}): A
   };
 }
 
+/** Paired structured and tool-agent engines backed by one Ollama configuration. */
 export class OllamaRuntime {
   readonly structured: AiSdkStructuredModelEngine;
   readonly agent: AiSdkToolAgentEngine;

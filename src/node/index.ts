@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { defaultConfig, type AgentEvent, type AgentSession, type AgentVConfig, type ConfigStore, type EventSink, type ExecutionScope, type RunEventStore, type SessionStore } from "../core/index.js";
 
 export * from "./skills.js";
+export * from "./doctor.js";
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });

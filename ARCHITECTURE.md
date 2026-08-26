@@ -133,4 +133,16 @@ Centralize execution mechanisms only when their semantics and safety rules are r
 
 ## Verification standard
 
-A release must pass strict TypeScript checking, deterministic unit/integration tests, a production build, imports from the built package subpaths, and `npm pack --dry-run`. CI runs this suite on the minimum Node version and the current release line.
+A release must pass strict TypeScript checking, deterministic unit/integration tests, a production build, compiled and executed consumer examples, imports from the built package subpaths, CLI help execution, and `npm pack --dry-run`. CI runs this suite on the minimum Node version and the current release line.
+
+## Agent accuracy surface
+
+Coding-agent guidance is part of the release contract rather than informal prose:
+
+- `AGENTS.md` governs repository changes and dependency direction.
+- `skills/agent-v` routes consuming agents to the correct engine and safety contract.
+- `examples/` are executable documentation compiled against package exports after every build.
+- `compatibility.json` is checked against runtime strategy identifiers and capabilities.
+- `agent-v doctor` exposes dependency and readiness evidence without making inference calls by default.
+
+These artifacts must change with the implementation they describe. Documentation that cannot be compiled or mechanically compared is supporting explanation, not authoritative API evidence.
