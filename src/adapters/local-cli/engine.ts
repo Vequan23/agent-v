@@ -124,7 +124,8 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
         workspaceAccess: this.runtime(runtimeId).capabilities.includes("read-only-workspace") ? "read-only" : "workspace-write",
         maxAttempts: 1,
       });
-      readiness = { ...installed, verification: "ready", checkedAt: new Date().toISOString(), durationMs: Date.now() - started, detail: "Authenticated and returned schema-valid bounded output." };
+      const { failure: _previousFailure, ...installedWithoutFailure } = installed;
+      readiness = { ...installedWithoutFailure, verification: "ready", checkedAt: new Date().toISOString(), durationMs: Date.now() - started, detail: "Authenticated and returned schema-valid bounded output." };
     } catch (error) {
       const failure = safeFailure(error);
       readiness = {

@@ -67,6 +67,23 @@ test("readiness is version-sensitive and execution validates output", async () =
   assert.equal((await engine.inspect("codex")).verification, "unverified");
 });
 
+test("a successful re-probe clears stale failure evidence", async () => {
+  let valid = false;
+  const runner = async (_command: string, args: readonly string[]) => {
+    if (args.includes("--version")) return { stdout: "codex 1.0", stderr: "" };
+    const text = valid ? '{"status":"ready","evidenceLabel":"runtime-probe"}' : '{"status":"not-ready"}';
+    return { stdout: `${JSON.stringify({ type: "text", text })}\n`, stderr: "" };
+  };
+  const engine = new LocalCliRuntimeEngine({ runner });
+  const failed = await engine.probe("codex");
+  assert.equal(failed.verification, "failed");
+  assert.ok(failed.failure);
+  valid = true;
+  const recovered = await engine.probe("codex");
+  assert.equal(recovered.verification, "ready");
+  assert.equal(recovered.failure, undefined);
+});
+
 test("OpenCode refuses a read-only run it cannot enforce", async () => {
   const engine = new LocalCliRuntimeEngine({ runner: async () => ({ stdout: "", stderr: "" }) });
   const output = defineOutput({ name: "ok", jsonSchema: { type: "object" }, parse: () => ({ ok: true }) });

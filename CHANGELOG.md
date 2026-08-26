@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+
+- Clear stale failure evidence when a later bounded runtime probe succeeds.
+
 ## 0.5.1
 
 - Include the actual named JSON Schema in local CLI prompts for runtimes that do not accept a native schema flag.

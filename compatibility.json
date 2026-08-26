@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.5.1",
+  "packageVersion": "0.5.2",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
