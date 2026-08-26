@@ -51,7 +51,7 @@ export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "opencode",
     name: "OpenCode",
-    strategyId: "opencode-run-json-v1",
+    strategyId: "opencode-run-json-v2",
     command: "opencode",
     versionArgs: ["--version"],
     capabilities: ["structured-output", "local-workspace", "workspace-write", "artifacts"],
@@ -62,7 +62,7 @@ export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "claude-code",
     name: "Claude Code",
-    strategyId: "claude-print-json-v1",
+    strategyId: "claude-print-json-v2",
     command: "claude",
     versionArgs: ["--version"],
     capabilities: ["structured-output", "local-workspace", "read-only-workspace", "artifacts"],

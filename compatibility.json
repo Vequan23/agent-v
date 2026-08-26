@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.5.0",
+  "packageVersion": "0.5.1",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
@@ -25,11 +25,11 @@
           "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"]
         },
         "opencode": {
-          "strategy": "opencode-run-json-v1",
+          "strategy": "opencode-run-json-v2",
           "capabilities": ["structured-output", "local-workspace", "workspace-write", "artifacts"]
         },
         "claude-code": {
-          "strategy": "claude-print-json-v1",
+          "strategy": "claude-print-json-v2",
           "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "artifacts"]
         },
         "cursor": {

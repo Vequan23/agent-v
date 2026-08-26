@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Include the actual named JSON Schema in local CLI prompts for runtimes that do not accept a native schema flag.
+- Version the repaired OpenCode and Claude Code prompt strategies so every run records which contract was enforced.
+
 ## 0.5.0
 
 - Add provider-neutral required tool sequencing with an explicit post-sequence tool policy.

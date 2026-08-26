@@ -16,6 +16,34 @@ test("normalizes JSONL runtime output", () => {
   assert.deepEqual(output.value, { answer: 42 });
 });
 
+for (const runtimeId of ["opencode", "claude-code"] as const) {
+  test(`${runtimeId} receives the actual JSON Schema in its prompt`, async () => {
+    let receivedPrompt = "";
+    const runner = async (_command: string, args: readonly string[]) => {
+      if (args.includes("--version")) return { stdout: `${runtimeId} 1.0`, stderr: "" };
+      receivedPrompt = args.at(-1) ?? "";
+      const value = '{"answer":42}';
+      return runtimeId === "claude-code"
+        ? { stdout: JSON.stringify({ type: "result", result: value }), stderr: "" }
+        : { stdout: `${JSON.stringify({ type: "text", text: value })}\n`, stderr: "" };
+    };
+    const engine = new LocalCliRuntimeEngine({ runner });
+    const output = defineOutput({
+      name: "answer-contract",
+      jsonSchema: { type: "object", properties: { answer: { type: "number", const: 42 } }, required: ["answer"], additionalProperties: false },
+      parse(value) {
+        if ((value as { answer?: unknown }).answer !== 42) throw new Error("invalid answer");
+        return { answer: 42 };
+      },
+    });
+    const result = await engine.run({ runtimeId, workspaceAccess: runtimeId === "claude-code" ? "read-only" : "workspace-write", scope: localExecutionScope("schema-prompt"), input: { prompt: "Return the answer." }, output });
+    assert.deepEqual(result.output, { answer: 42 });
+    assert.match(receivedPrompt, /Required output contract "answer-contract"/);
+    assert.match(receivedPrompt, /"answer"/);
+    assert.match(receivedPrompt, /"additionalProperties": false/);
+  });
+}
+
 test("readiness is version-sensitive and execution validates output", async () => {
   let version = "codex 1.0";
   const runner = async (_command: string, args: readonly string[]) => {
