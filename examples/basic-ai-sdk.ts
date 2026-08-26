@@ -4,8 +4,8 @@ import {
   EngineRegistry,
   defineAgent,
   localExecutionScope,
-} from "agent-v";
-import { AiSdkToolAgentEngine } from "agent-v/ai-sdk";
+} from "@vraxis/agent-v";
+import { AiSdkToolAgentEngine } from "@vraxis/agent-v/ai-sdk";
 
 export function createBasicAiAgent(model: LanguageModel) {
   const engine = new AiSdkToolAgentEngine({

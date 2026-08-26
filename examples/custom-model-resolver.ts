@@ -1,4 +1,4 @@
-import { AiSdkToolAgentEngine, type AiSdkModelResolver } from "agent-v/ai-sdk";
+import { AiSdkToolAgentEngine, type AiSdkModelResolver } from "@vraxis/agent-v/ai-sdk";
 
 export function createResolvedModelEngine(resolveModel: AiSdkModelResolver) {
   return new AiSdkToolAgentEngine({

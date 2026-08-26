@@ -1,5 +1,5 @@
-import { ExtensionRegistry, defineExtension } from "agent-v";
-import { loadSkillPackage } from "agent-v/node";
+import { ExtensionRegistry, defineExtension } from "@vraxis/agent-v";
+import { loadSkillPackage } from "@vraxis/agent-v/node";
 
 export async function registerFilesystemSkill(directory: string, extensions = new ExtensionRegistry()) {
   const loaded = await loadSkillPackage(directory);

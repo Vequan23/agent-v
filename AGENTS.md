@@ -15,12 +15,12 @@ Use current local dependency documentation and source when editing an adapter. I
 
 ## Package routing
 
-- `agent-v`: provider-neutral contracts, registries, policies, and composition.
-- `agent-v/ai-sdk`: AI SDK structured generation and tool agents.
-- `agent-v/local-cli`: bounded Codex, OpenCode, Claude Code, and Cursor runtime integration.
-- `agent-v/ollama`: optional Ollama model runtime support.
-- `agent-v/node`: filesystem persistence, diagnostics, and Agent Skills loading.
-- `agent-v/testing`: deterministic fakes and approval policies.
+- `@vraxis/agent-v`: provider-neutral contracts, registries, policies, and composition.
+- `@vraxis/agent-v/ai-sdk`: AI SDK structured generation and tool agents.
+- `@vraxis/agent-v/local-cli`: bounded Codex, OpenCode, Claude Code, and Cursor runtime integration.
+- `@vraxis/agent-v/ollama`: optional Ollama model runtime support.
+- `@vraxis/agent-v/node`: filesystem persistence, diagnostics, and Agent Skills loading.
+- `@vraxis/agent-v/testing`: deterministic fakes and approval policies.
 
 Do not import adapter or Node types into `src/core`. Optional provider dependencies must remain isolated behind their package subpath.
 

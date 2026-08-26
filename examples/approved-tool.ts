@@ -2,7 +2,7 @@ import {
   defineOutput,
   defineTool,
   type ApprovalPolicy,
-} from "agent-v";
+} from "@vraxis/agent-v";
 
 export const explicitApproval: ApprovalPolicy = {
   async decide(request) {

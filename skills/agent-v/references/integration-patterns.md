@@ -14,11 +14,11 @@ Choose from required behavior, not provider preference:
 
 | Need | Import | Contract |
 | --- | --- | --- |
-| One schema-bound model operation | `agent-v/ai-sdk` | `StructuredModelEngine` |
-| Bounded model/tool loop | `agent-v/ai-sdk` | `ToolAgentEngine` |
-| Local or remote Ollama model | `agent-v/ollama` | AI SDK engines through `OllamaRuntime` |
-| Coding agent against a workspace | `agent-v/local-cli` | `CodingRuntimeEngine` |
-| Local persistence or diagnostics | `agent-v/node` | Store and doctor ports |
+| One schema-bound model operation | `@vraxis/agent-v/ai-sdk` | `StructuredModelEngine` |
+| Bounded model/tool loop | `@vraxis/agent-v/ai-sdk` | `ToolAgentEngine` |
+| Local or remote Ollama model | `@vraxis/agent-v/ollama` | AI SDK engines through `OllamaRuntime` |
+| Coding agent against a workspace | `@vraxis/agent-v/local-cli` | `CodingRuntimeEngine` |
+| Local persistence or diagnostics | `@vraxis/agent-v/node` | Store and doctor ports |
 
 An executable being installed is not readiness evidence. Inspect first; use a bounded live probe only when its credentials, cost, and external effects are authorized.
 

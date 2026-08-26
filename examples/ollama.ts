@@ -1,5 +1,5 @@
-import { EngineRegistry } from "agent-v";
-import { OllamaRuntime } from "agent-v/ollama";
+import { EngineRegistry } from "@vraxis/agent-v";
+import { OllamaRuntime } from "@vraxis/agent-v/ollama";
 
 export function createLocalOllama(model: string, baseURL = "http://127.0.0.1:11434") {
   const ollama = new OllamaRuntime({ defaultModel: model, baseURL });

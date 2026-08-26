@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { MockLanguageModelV4 } from "ai/test";
-import { EngineRegistry } from "agent-v";
+import { EngineRegistry } from "@vraxis/agent-v";
 import { createBasicAiAgent } from "./basic-ai-sdk.ts";
 import { createPublishContributionTool } from "./approved-tool.ts";
 import { createLocalOllama } from "./ollama.ts";

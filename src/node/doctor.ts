@@ -82,7 +82,7 @@ async function inspectOllama(options: { baseURL?: string }): Promise<DoctorOllam
       detail: missing ? "The optional Ollama adapter dependencies are not installed." : "The Ollama adapter could not be loaded.",
       failure: {
         code: missing ? "dependency-missing" : "engine-unavailable",
-        message: missing ? "Install ai and ai-sdk-ollama to use agent-v/ollama." : "The Ollama adapter could not be loaded.",
+        message: missing ? "Install ai and ai-sdk-ollama to use @vraxis/agent-v/ollama." : "The Ollama adapter could not be loaded.",
         retryable: false,
       },
     };
@@ -103,14 +103,14 @@ export async function doctorAgentV(options: AgentVDoctorOptions = {}, services: 
   if (options.probe && (!options.runtimeIds || options.runtimeIds.length === 0)) {
     throw new Error("Live probing requires at least one explicit runtime id.");
   }
-  const packageNames = ["agent-v", "ai", "ai-sdk-ollama"] as const;
+  const packageNames = ["@vraxis/agent-v", "ai", "ai-sdk-ollama"] as const;
   const purposes = {
-    "agent-v": "core execution contracts",
+    "@vraxis/agent-v": "core execution contracts",
     ai: "optional AI SDK adapter",
     "ai-sdk-ollama": "optional Ollama adapter",
   } as const;
   const dependencies = await Promise.all(packageNames.map(async (name): Promise<DoctorDependency> => {
-    const version = name === "agent-v" ? AGENT_V_VERSION : await services.packageVersion(name);
+    const version = name === "@vraxis/agent-v" ? AGENT_V_VERSION : await services.packageVersion(name);
     return { name, installed: Boolean(version), version, purpose: purposes[name] };
   }));
   const requestedRuntimes = options.runtimeIds ?? builtInRuntimes.map((runtime) => runtime.id);
@@ -119,8 +119,8 @@ export async function doctorAgentV(options: AgentVDoctorOptions = {}, services: 
   const issues: DoctorIssue[] = [];
 
   for (const dependency of dependencies) {
-    if (dependency.name === "agent-v" && !dependency.installed) {
-      issues.push({ severity: "error", component: dependency.name, message: "The agent-v package is not resolvable." });
+    if (dependency.name === "@vraxis/agent-v" && !dependency.installed) {
+      issues.push({ severity: "error", component: dependency.name, message: "The @vraxis/agent-v package is not resolvable." });
     } else if (!dependency.installed) {
       issues.push({ severity: "info", component: dependency.name, message: `${dependency.name} is not installed because its adapter is optional.` });
     }

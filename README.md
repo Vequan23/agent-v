@@ -19,7 +19,7 @@ It is an engine, not a chatbot framework and not a repository of every product-s
 ## Install
 
 ```bash
-npm install agent-v
+npm install @vraxis/agent-v
 ```
 
 The optional AI SDK adapter requires a compatible peer:
@@ -49,7 +49,7 @@ import {
   defineSkill,
   defineTool,
   localExecutionScope,
-} from "agent-v";
+} from "@vraxis/agent-v";
 
 const lookupSelection = defineTool({
   name: "lookup-selection",
@@ -137,7 +137,7 @@ Model resolvers can return authoritative provider/runtime provenance with the mo
 ## Ollama
 
 ```ts
-import { OllamaRuntime } from "agent-v/ollama";
+import { OllamaRuntime } from "@vraxis/agent-v/ollama";
 
 const ollama = new OllamaRuntime({
   defaultModel: "your-installed-model",
@@ -155,17 +155,17 @@ Resolution checks the live daemon version and installed model list before creati
 
 ## Skills
 
-`agent-v/node` exports `loadSkillPackage()` and `discoverSkillPackages()`. A package is a directory containing a standard `SKILL.md` plus optional `scripts/`, `references/`, and `assets/` directories. Discovery validates and indexes these resources but never executes scripts.
+`@vraxis/agent-v/node` exports `loadSkillPackage()` and `discoverSkillPackages()`. A package is a directory containing a standard `SKILL.md` plus optional `scripts/`, `references/`, and `assets/` directories. Discovery validates and indexes these resources but never executes scripts.
 
 The standard `allowed-tools` field is preserved as `preapprovedTools`, but it does not bypass host policy. It also seeds the skill's tool allowlist. Tools marked `requiresApproval` still require an `ApprovalPolicy` at execution time.
 
 ## Adapters
 
-- `agent-v/ai-sdk`: AI SDK structured and tool-agent engines.
-- `agent-v/local-cli`: bounded local coding runtimes and readiness probes.
-- `agent-v/ollama`: optional local/remote Ollama structured and tool-agent engines.
-- `agent-v/node`: JSON config/session stores, JSONL event ledger, and filesystem skills.
-- `agent-v/testing`: deterministic engines and approval policies.
+- `@vraxis/agent-v/ai-sdk`: AI SDK structured and tool-agent engines.
+- `@vraxis/agent-v/local-cli`: bounded local coding runtimes and readiness probes.
+- `@vraxis/agent-v/ollama`: optional local/remote Ollama structured and tool-agent engines.
+- `@vraxis/agent-v/node`: JSON config/session stores, JSONL event ledger, and filesystem skills.
+- `@vraxis/agent-v/testing`: deterministic engines and approval policies.
 
 Local CLI discovery and readiness are separate. An executable is `installed`; only a bounded, authenticated, schema-valid probe is `ready`. OpenCode advertises workspace-write only, so a default read-only request fails closed instead of weakening the requested policy.
 
@@ -184,7 +184,7 @@ Agents should start with the closest executable example and verify against insta
 Locate the packaged portable skill from an installed dependency with:
 
 ```bash
-npx agent-v skill-path
+npx @vraxis/agent-v skill-path
 ```
 
 The consuming harness can copy or link that directory into its configured Agent Skills location; discovery locations are owned by the harness, not guessed by `agent-v`.
@@ -194,20 +194,20 @@ The consuming harness can copy or link that directory into its configured Agent 
 Run safe discovery without provider inference:
 
 ```bash
-npx agent-v doctor
-npx agent-v doctor --json
+npx @vraxis/agent-v doctor
+npx @vraxis/agent-v doctor --json
 ```
 
 Run an authenticated CLI probe only by naming the runtime explicitly:
 
 ```bash
-npx agent-v doctor --runtime codex --probe
+npx @vraxis/agent-v doctor --runtime codex --probe
 ```
 
 Require an Ollama server and model:
 
 ```bash
-npx agent-v doctor --ollama-url http://127.0.0.1:11434 --ollama-model <installed-model>
+npx @vraxis/agent-v doctor --ollama-url http://127.0.0.1:11434 --ollama-model <installed-model>
 ```
 
 The default command does not start services, download models, or make model inference calls. Live CLI probing may use configured credentials, so `--probe` requires an explicit `--runtime`.

@@ -4,7 +4,7 @@ import {
   MemoryRunEventStore,
   MemorySessionStore,
   type ToolAgentEngine,
-} from "agent-v";
+} from "@vraxis/agent-v";
 
 export function createStatefulRuntime(engine: ToolAgentEngine) {
   const sessions = new MemorySessionStore();

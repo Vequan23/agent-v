@@ -1,5 +1,5 @@
-import { defineOutput, localExecutionScope } from "agent-v";
-import { LocalCliRuntimeEngine } from "agent-v/local-cli";
+import { defineOutput, localExecutionScope } from "@vraxis/agent-v";
+import { LocalCliRuntimeEngine } from "@vraxis/agent-v/local-cli";
 
 export function createRepositorySummaryRequest(workspacePath: string) {
   const engine = new LocalCliRuntimeEngine();
