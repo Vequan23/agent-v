@@ -1,8 +1,26 @@
 import {
   defineOutput,
   defineTool,
+  defineAgent,
   type ApprovalPolicy,
 } from "@vraxis/agent-v";
+
+export function createEvidenceFirstPlanner() {
+  return defineAgent({
+    id: "evidence-first-planner",
+    name: "Evidence-first planner",
+    engineId: "primary-agent",
+    instructions: "Read product and outcome evidence before recommending one action.",
+    skills: [],
+    tools: ["read-product", "read-outcomes"],
+    requiredCapabilities: ["tools", "tool-sequencing", "tool-audit"],
+    maxSteps: 3,
+    toolPolicy: {
+      requiredSequence: ["read-product", "read-outcomes"],
+      afterRequired: "disable",
+    },
+  });
+}
 
 export const explicitApproval: ApprovalPolicy = {
   async decide(request) {

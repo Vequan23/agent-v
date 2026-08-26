@@ -4,12 +4,13 @@
 
 It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## What works in 0.4
+## What works in 0.5
 
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
 - Codex CLI, OpenCode, and Claude Code runtime adapters with honest access-mode capabilities and bounded schema output. Cursor is discoverable but rejected for structured execution until its adapter can guarantee the contract.
 - Local Ollama models through an optional AI SDK 7-compatible adapter with daemon and installed-model readiness checks.
 - Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
+- Host-enforced required tool sequences and redacted tool-call audit evidence for governed evidence-first agents.
 - Portable skills defined in code or loaded from standard `SKILL.md` packages.
 - Tenant/project/principal execution scope on every run, approval, event, session, and model-resolution request.
 - Memory and local JSON/JSONL persistence with tenant/project isolation.
@@ -125,6 +126,29 @@ const scope = {
 ```
 
 Every tool requested by an agent using skills must be allowed by those skills. Missing grants fail before provider execution; they are never silently filtered.
+
+## Governed tool phases
+
+An agent can require exact tool reads before final synthesis without relying on prompt compliance:
+
+```ts
+const planner = defineAgent({
+  id: "evidence-planner",
+  name: "Evidence planner",
+  engineId: "primary-agent",
+  instructions: "Recommend one action supported by the supplied evidence.",
+  skills: ["distribution-evidence"],
+  tools: ["read-product", "read-evidence", "read-outcomes"],
+  requiredCapabilities: ["tools", "tool-sequencing", "tool-audit"],
+  maxSteps: 4,
+  toolPolicy: {
+    requiredSequence: ["read-product", "read-evidence", "read-outcomes"],
+    afterRequired: "disable",
+  },
+});
+```
+
+Vraxis forces one named tool per step, removes tools from the final synthesis step when `afterRequired` is `disable`, and rejects missing tools or insufficient step budgets before inference. A successful `ToolAgentResult.toolAudit` contains only tool name/version, step, duration, status, approval disposition, and sequence satisfaction. Raw tool inputs, outputs, and generated content are not copied into the audit.
 
 ## Model and credential resolution
 

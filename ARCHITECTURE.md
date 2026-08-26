@@ -56,6 +56,10 @@ model tool call
 
 External-side-effect and privileged tools must require approval. A host approval policy remains authoritative; skill metadata can never bypass it. Tool failures emitted as events use safe normalized messages.
 
+`ToolExecutionPolicy` lets a product declare an exact required tool sequence and decide whether tools remain available afterward. Supporting engines must advertise `tool-sequencing` and `tool-audit`. The AI SDK adapter maps the sequence to forced per-step tool choices, disables tools for final synthesis when requested, and verifies the observed completed calls before returning success. Missing tools and insufficient step budgets fail before inference.
+
+Successful tool-agent results include a redacted `ToolExecutionAudit`: required and observed names, sequence satisfaction, and per-call name/version, step, duration, completion state, and approval disposition. It deliberately excludes tool inputs, outputs, model text, and provider-native objects. Full host-approved payload handling remains in scoped events or product persistence policy.
+
 The shared repository should contain broadly reusable, well-tested tool contracts and adapters. Product-specific tools stay with the product until their semantics are genuinely shared. This avoids turning `agent-v` into an ungoverned catalog with ambient authority.
 
 ## Skills and agents

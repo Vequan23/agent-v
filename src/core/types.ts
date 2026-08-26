@@ -9,6 +9,8 @@ export type BuiltInCapability =
   | "tools"
   | "tool-approval"
   | "tool-filtering"
+  | "tool-sequencing"
+  | "tool-audit"
   | "sessions"
   | "resumable-sessions"
   | "local-workspace"

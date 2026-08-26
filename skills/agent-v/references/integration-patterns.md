@@ -38,6 +38,8 @@ When skills are selected, their combined tool allowlist constrains the blueprint
 
 Declare only capabilities the workflow actually needs. Selection should fail if the engine cannot enforce one.
 
+For governed evidence-first loops, declare `toolPolicy.requiredSequence` on the blueprint and use `afterRequired: "disable"` when final synthesis must not invoke more tools. Include `tool-sequencing` and `tool-audit` in `requiredCapabilities`. Vraxis validates tool availability and step budget before inference and returns redacted execution evidence in `result.toolAudit`.
+
 ## Persistence and provenance
 
 Sessions and event queries are isolated by tenant, project, principal, and optional engagement. Preserve that scope when replacing the reference stores.

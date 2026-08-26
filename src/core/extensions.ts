@@ -1,4 +1,4 @@
-import type { AgentTool, ToolAgentRequest } from "./contracts.js";
+import type { AgentTool, ToolAgentRequest, ToolExecutionPolicy } from "./contracts.js";
 import type { AgentCapability, ContextArtifact, JsonObject } from "./types.js";
 
 /** Portable, versioned guidance with a constraining tool allowlist. */
@@ -26,6 +26,7 @@ interface AgentBlueprintBase {
   tools: readonly string[];
   requiredCapabilities: readonly AgentCapability[];
   maxSteps?: number;
+  toolPolicy?: ToolExecutionPolicy;
   metadata?: JsonObject;
 }
 
@@ -122,5 +123,11 @@ export function defineAgent(blueprint: AgentBlueprint): AgentBlueprint {
   if (!blueprint.id.trim() || !blueprint.name.trim()) throw new Error("Agents require a stable id and name.");
   if (!blueprint.instructions.trim()) throw new Error(`Agent ${blueprint.id} requires instructions.`);
   if (new Set(blueprint.skills).size !== blueprint.skills.length || new Set(blueprint.tools).size !== blueprint.tools.length) throw new Error(`Agent ${blueprint.id} contains duplicate skill or tool ids.`);
+  const requiredSequence = blueprint.toolPolicy?.requiredSequence ?? [];
+  const unavailable = [...new Set(requiredSequence.filter((name) => !blueprint.tools.includes(name)))];
+  if (unavailable.length) throw new Error(`Agent ${blueprint.id} requires tools it does not declare: ${unavailable.join(", ")}.`);
+  if (requiredSequence.length && (blueprint.maxSteps ?? 20) < requiredSequence.length + 1) {
+    throw new Error(`Agent ${blueprint.id} requires at least ${requiredSequence.length + 1} steps for its tool sequence and final synthesis.`);
+  }
   return Object.freeze({ ...blueprint });
 }

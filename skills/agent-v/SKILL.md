@@ -2,7 +2,7 @@
 name: agent-v
 description: Integrate or extend the agent-v TypeScript library for scoped agents, tools, approvals, AI SDK models, local coding runtimes, Ollama, sessions, events, or Agent Skills.
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Use agent-v accurately
@@ -25,6 +25,7 @@ Do not substitute a coding CLI adapter for an ordinary model provider or treat O
 - Supply `ExecutionScope` on every run. Use `localExecutionScope()` only for genuinely single-user local applications.
 - Declare every agent's skills, tools, and required capabilities explicitly.
 - Give each tool stable input and output contracts, version, risk, side-effect classification, permissions, approval behavior, and timeout.
+- Use an agent `toolPolicy` when evidence reads must occur in an exact order. Require `tool-sequencing` and `tool-audit`, and inspect `result.toolAudit.sequenceSatisfied`.
 - Require approval for external side effects and privileged actions. Never weaken policy after a denial or adapter failure.
 - Treat artifacts as host-supplied evidence. Keep product-specific evidence judgment, retrieval, prompts, and UX in the consuming product.
 - Persist returned normalized events and provenance when runs must be auditable.

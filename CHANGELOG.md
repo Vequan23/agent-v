@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- Add provider-neutral required tool sequencing with an explicit post-sequence tool policy.
+- Enforce AI SDK tool order through `prepareStep` and fail before inference for unavailable tools or insufficient step budgets.
+- Return redacted tool execution audits with sequence satisfaction, step, version, duration, status, and approval disposition.
+- Advertise enforceable `tool-sequencing` and `tool-audit` engine capabilities.
+
 ## 0.4.0
 
 - Add a packaged `agent-v` Agent Skill and repository guidance for coding agents.

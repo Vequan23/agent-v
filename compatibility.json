@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.4.0",
+  "packageVersion": "0.5.0",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
       "packageRange": ">=7.0.0 <8",
+      "capabilities": ["structured-output", "streaming", "tools", "tool-approval", "tool-filtering", "tool-sequencing", "tool-audit", "artifacts"],
       "strategies": [
         "ai-sdk-v7-structured-model",
         "ai-sdk-v7-tool-agent"

@@ -78,6 +78,35 @@ export interface ApprovalPolicy {
   decide(request: ApprovalRequest): Promise<"approved" | "denied">;
 }
 
+/** Provider-neutral policy for mandatory tool phases in a bounded agent run. */
+export interface ToolExecutionPolicy {
+  /** Tools that must complete in this exact order before final synthesis. */
+  requiredSequence?: readonly string[];
+  /** Whether tools remain available after the required sequence completes. */
+  afterRequired?: "allow" | "disable";
+}
+
+export interface ToolCallAudit {
+  toolCallId: string;
+  toolName: string;
+  toolVersion: string;
+  /** One-based model step that requested the tool. */
+  step: number;
+  status: "completed" | "failed";
+  durationMs: number;
+  approval: "not-required" | "required" | "approved" | "denied";
+  failureCode?: import("./types.js").FailureCode;
+}
+
+/** Redacted evidence that the host's tool policy was actually satisfied. */
+export interface ToolExecutionAudit {
+  requiredSequence: readonly string[];
+  afterRequired: "allow" | "disable";
+  observedSequence: readonly string[];
+  sequenceSatisfied: boolean;
+  calls: readonly ToolCallAudit[];
+}
+
 export interface ToolAgentRequest<T = string> extends RunContext {
   input: AgentInput;
   tools?: readonly AgentTool[];
@@ -85,6 +114,7 @@ export interface ToolAgentRequest<T = string> extends RunContext {
   maxSteps?: number;
   model?: string;
   approvalPolicy?: ApprovalPolicy;
+  toolPolicy?: ToolExecutionPolicy;
 }
 
 export interface ToolAgentResult<T = string> {
@@ -95,6 +125,7 @@ export interface ToolAgentResult<T = string> {
   provenance: RunProvenance;
   durationMs: number;
   usage?: TokenUsage;
+  toolAudit: ToolExecutionAudit;
 }
 
 export interface AgentRunStream<T> {

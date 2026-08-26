@@ -43,7 +43,7 @@ export class AgentV {
     this.runEvents = options.runEvents;
   }
 
-  private async prepare<T>(blueprint: AgentBlueprint, request: Omit<ToolAgentRequest<T>, "tools" | "maxSteps">): Promise<PreparedRun<T>> {
+  private async prepare<T>(blueprint: AgentBlueprint, request: Omit<ToolAgentRequest<T>, "tools" | "maxSteps" | "toolPolicy">): Promise<PreparedRun<T>> {
     assertExecutionScope(request.scope);
     const config = await this.config.load();
     const profile = blueprint.profileId ? config.profiles.find((candidate) => candidate.id === blueprint.profileId) : undefined;
@@ -55,6 +55,13 @@ export class AgentV {
     for (const capability of blueprint.requiredCapabilities ?? []) {
       if (!engine.descriptor.capabilities.includes(capability)) {
         throw new AgentVError("unsupported-capability", `${engine.descriptor.name} does not support ${capability}.`);
+      }
+    }
+    if (blueprint.toolPolicy?.requiredSequence?.length || blueprint.toolPolicy?.afterRequired === "disable") {
+      for (const capability of ["tool-sequencing", "tool-audit"] as const) {
+        if (!engine.descriptor.capabilities.includes(capability)) {
+          throw new AgentVError("unsupported-capability", `${engine.descriptor.name} does not support ${capability}.`);
+        }
       }
     }
     const skills = (blueprint.skills ?? []).map((id) => this.extensions.skills.require(id));
@@ -86,6 +93,7 @@ export class AgentV {
       credentialRef: request.credentialRef ?? profile?.credentialRef,
       engineOptions: request.engineOptions ?? profile?.options,
       maxSteps: blueprint.maxSteps ?? config.execution.maxSteps,
+      toolPolicy: blueprint.toolPolicy,
     };
     const middleware = this.extensions.middleware.list() as readonly AgentRunMiddleware[];
     const entered: AgentRunMiddleware[] = [];
@@ -127,7 +135,7 @@ export class AgentV {
     });
   }
 
-  async run<T = string>(blueprint: AgentBlueprint, request: Omit<ToolAgentRequest<T>, "tools" | "maxSteps">): Promise<ToolAgentResult<T>> {
+  async run<T = string>(blueprint: AgentBlueprint, request: Omit<ToolAgentRequest<T>, "tools" | "maxSteps" | "toolPolicy">): Promise<ToolAgentResult<T>> {
     let middleware: readonly AgentRunMiddleware[] = [];
     try {
       const prepared = await this.prepare(blueprint, request);
@@ -142,7 +150,7 @@ export class AgentV {
     }
   }
 
-  async stream<T = string>(blueprint: AgentBlueprint, request: Omit<ToolAgentRequest<T>, "tools" | "maxSteps">): Promise<AgentRunStream<T>> {
+  async stream<T = string>(blueprint: AgentBlueprint, request: Omit<ToolAgentRequest<T>, "tools" | "maxSteps" | "toolPolicy">): Promise<AgentRunStream<T>> {
     let middleware: readonly AgentRunMiddleware[] = [];
     try {
       const prepared = await this.prepare(blueprint, request);

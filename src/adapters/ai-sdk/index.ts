@@ -10,6 +10,7 @@ import {
 } from "ai";
 import {
   AgentVError,
+  assertToolExecutionPolicy,
   assertExecutionScope,
   eventTimestamp,
   noopEventSink,
@@ -29,6 +30,8 @@ import {
   type ToolAgentEngine,
   type ToolAgentRequest,
   type ToolAgentResult,
+  type ToolCallAudit,
+  type ToolExecutionAudit,
   type TokenUsage,
 } from "../../core/index.js";
 
@@ -162,7 +165,7 @@ function descriptor(options: AiSdkEngineOptions, kind: "structured-model" | "too
     model: options.modelId,
     capabilities: kind === "structured-model"
       ? ["structured-output", "artifacts"]
-      : ["structured-output", "streaming", "tools", "tool-approval", "artifacts"],
+      : ["structured-output", "streaming", "tools", "tool-approval", "tool-filtering", "tool-sequencing", "tool-audit", "artifacts"],
   };
 }
 
@@ -219,13 +222,39 @@ export class AiSdkStructuredModelEngine {
   }
 }
 
-function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknown>, sink: EventSink, runId: string): ToolSet {
+interface MutableToolCallAudit {
+  toolCallId: string;
+  toolName: string;
+  toolVersion: string;
+  step: number;
+  status: "completed" | "failed";
+  durationMs: number;
+  approval: "not-required" | "required" | "approved" | "denied";
+  failureCode?: import("../../core/index.js").FailureCode;
+}
+
+interface ToolExecutionState {
+  currentStep: number;
+  calls: MutableToolCallAudit[];
+}
+
+function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknown>, sink: EventSink, runId: string, state: ToolExecutionState): ToolSet {
   return Object.fromEntries(tools.map((definition) => [definition.name, tool({
     description: definition.description,
     inputSchema: contractSchema(definition.input),
     execute: async (rawInput, options) => {
       const input = definition.input.parse(rawInput);
       const toolCallId = options.toolCallId;
+      const audit: MutableToolCallAudit = {
+        toolCallId,
+        toolName: definition.name,
+        toolVersion: definition.version,
+        step: state.currentStep,
+        status: "failed",
+        durationMs: 0,
+        approval: definition.requiresApproval ? "required" : "not-required",
+      };
+      state.calls.push(audit);
       await emit(sink, { ...eventBase(request, runId), type: "tool.requested", toolCallId, toolName: definition.name, input: rawInput as JsonValue });
       const started = Date.now();
       try {
@@ -254,6 +283,7 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
             metadata: request.metadata,
           });
           await emit(sink, { ...eventBase(request, runId), type: "approval.resolved", approvalId, decision });
+          audit.approval = decision;
           if (decision !== "approved") throw new AgentVError("permission-denied", `Tool ${definition.name} was denied.`);
         }
         const timeoutController = new AbortController();
@@ -283,14 +313,61 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
           clearTimeout(timeout);
         }
         const output = definition.output.parse(rawOutput);
-        await emit(sink, { ...eventBase(request, runId), type: "tool.completed", toolCallId, toolName: definition.name, durationMs: Date.now() - started });
+        audit.status = "completed";
+        audit.durationMs = Date.now() - started;
+        await emit(sink, { ...eventBase(request, runId), type: "tool.completed", toolCallId, toolName: definition.name, durationMs: audit.durationMs });
         return output;
       } catch (error) {
-        await emit(sink, { ...eventBase(request, runId), type: "tool.failed", toolCallId, toolName: definition.name, message: safeFailure(error).message });
+        const failure = safeFailure(error);
+        audit.status = "failed";
+        audit.durationMs = Date.now() - started;
+        audit.failureCode = failure.code;
+        await emit(sink, { ...eventBase(request, runId), type: "tool.failed", toolCallId, toolName: definition.name, message: failure.message });
         throw error;
       }
     },
   })]));
+}
+
+function prepareToolExecution(request: ToolAgentRequest<unknown>) {
+  const maxSteps = request.maxSteps ?? 20;
+  const policy = assertToolExecutionPolicy(request.toolPolicy, request.tools ?? [], maxSteps);
+  const state: ToolExecutionState = { currentStep: 1, calls: [] };
+  return {
+    state,
+    prepareStep: ({ stepNumber }: { stepNumber: number }) => {
+      const requiredTool = policy.requiredSequence[stepNumber];
+      if (requiredTool) {
+        return {
+          activeTools: [requiredTool],
+          toolChoice: { type: "tool" as const, toolName: requiredTool },
+        };
+      }
+      if (policy.afterRequired === "disable") return { activeTools: [], toolChoice: "none" as const };
+      return {};
+    },
+    audit(): ToolExecutionAudit {
+      const calls: ToolCallAudit[] = state.calls.map((call) => ({ ...call }));
+      const observedSequence = calls.map((call) => call.toolName);
+      const requiredComplete = policy.requiredSequence.every((name, index) => {
+        const call = calls[index];
+        return call?.toolName === name && call.status === "completed";
+      });
+      const noUnexpectedCalls = policy.afterRequired === "allow" || calls.length === policy.requiredSequence.length;
+      return {
+        ...policy,
+        observedSequence,
+        sequenceSatisfied: requiredComplete && noUnexpectedCalls,
+        calls,
+      };
+    },
+  };
+}
+
+function assertSatisfiedToolAudit(audit: ToolExecutionAudit): void {
+  if (!audit.sequenceSatisfied) {
+    throw new AgentVError("output-invalid", `Required tool sequence was not satisfied. Expected ${audit.requiredSequence.join(" -> ") || "no tool calls"}; observed ${audit.observedSequence.join(" -> ") || "none"}.`);
+  }
 }
 
 interface AgentInvocation<T> {
@@ -298,6 +375,7 @@ interface AgentInvocation<T> {
   output: T;
   steps: number;
   usage?: TokenUsage;
+  toolAudit: ToolExecutionAudit;
 }
 
 export class AiSdkToolAgentEngine implements ToolAgentEngine {
@@ -311,13 +389,18 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
   }
 
   private async generate<T>(request: ToolAgentRequest<T>, sink: EventSink, runId: string, model: LanguageModel): Promise<AgentInvocation<T>> {
-    const tools = toAiTools(request.tools ?? [], request as ToolAgentRequest<unknown>, sink, runId);
+    const execution = prepareToolExecution(request as ToolAgentRequest<unknown>);
+    const tools = toAiTools(request.tools ?? [], request as ToolAgentRequest<unknown>, sink, runId, execution.state);
     const common = {
       model,
       instructions: request.input.instructions,
       tools,
       stopWhen: isStepCount(request.maxSteps ?? 20),
-      onStepStart: async ({ stepNumber }: { stepNumber: number }) => emit(sink, { ...eventBase(request, runId), type: "model.started", step: stepNumber + 1 }),
+      prepareStep: execution.prepareStep,
+      onStepStart: async ({ stepNumber }: { stepNumber: number }) => {
+        execution.state.currentStep = stepNumber + 1;
+        await emit(sink, { ...eventBase(request, runId), type: "model.started", step: stepNumber + 1 });
+      },
       onStepEnd: async ({ stepNumber, usage }: { stepNumber: number; usage: unknown }) => emit(sink, { ...eventBase(request, runId), type: "model.completed", step: stepNumber + 1, usage: usageOf(usage) }),
     };
     if (request.output) {
@@ -326,11 +409,15 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
         output: Output.object({ schema: contractSchema(request.output), name: request.output.name, description: request.output.description }),
       });
       const result = await agent.generate({ prompt: formatInput(request.input), abortSignal: request.abortSignal });
-      return { text: result.text, output: result.output, steps: result.steps.length, usage: usageOf(result.usage) };
+      const toolAudit = execution.audit();
+      assertSatisfiedToolAudit(toolAudit);
+      return { text: result.text, output: result.output, steps: result.steps.length, usage: usageOf(result.usage), toolAudit };
     }
     const agent = new ToolLoopAgent(common);
     const result = await agent.generate({ prompt: formatInput(request.input), abortSignal: request.abortSignal });
-    return { text: result.text, output: result.text as T, steps: result.steps.length, usage: usageOf(result.usage) };
+    const toolAudit = execution.audit();
+    assertSatisfiedToolAudit(toolAudit);
+    return { text: result.text, output: result.text as T, steps: result.steps.length, usage: usageOf(result.usage), toolAudit };
   }
 
   async run<T = string>(request: ToolAgentRequest<T>, sink: EventSink = noopEventSink): Promise<ToolAgentResult<T>> {
@@ -386,13 +473,18 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
       const provenance = provenanceFor(this.options, this.descriptor.id, modelId, "tool-agent", selected);
       await emit(combined, { ...eventBase(request, runId), type: "run.started", provenance });
       try {
-        const tools = toAiTools(request.tools ?? [], request as ToolAgentRequest<unknown>, combined, runId);
+        const execution = prepareToolExecution(request as ToolAgentRequest<unknown>);
+        const tools = toAiTools(request.tools ?? [], request as ToolAgentRequest<unknown>, combined, runId, execution.state);
         const common = {
           model: selected.model,
           instructions: request.input.instructions,
           tools,
           stopWhen: isStepCount(request.maxSteps ?? 20),
-          onStepStart: async ({ stepNumber }: { stepNumber: number }) => emit(combined, { ...eventBase(request, runId), type: "model.started", step: stepNumber + 1 }),
+          prepareStep: execution.prepareStep,
+          onStepStart: async ({ stepNumber }: { stepNumber: number }) => {
+            execution.state.currentStep = stepNumber + 1;
+            await emit(combined, { ...eventBase(request, runId), type: "model.started", step: stepNumber + 1 });
+          },
           onStepEnd: async ({ stepNumber, usage }: { stepNumber: number; usage: unknown }) => emit(combined, { ...eventBase(request, runId), type: "model.completed", step: stepNumber + 1, usage: usageOf(usage) }),
         };
         const agent = request.output
@@ -406,9 +498,11 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
         const output = request.output ? await streamed.output as T : text as T;
         const steps = (await streamed.steps).length;
         const usage = usageOf(await streamed.usage);
+        const toolAudit = execution.audit();
+        assertSatisfiedToolAudit(toolAudit);
         const durationMs = Date.now() - started;
         await emit(combined, { ...eventBase(request, runId), type: "run.completed", durationMs, usage });
-        return { runId, output, text, steps, provenance, durationMs, usage };
+        return { runId, output, text, steps, provenance, durationMs, usage, toolAudit };
       } catch (error) {
         const failure = safeFailure(error);
         await emit(combined, { ...eventBase(request, runId), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { MockLanguageModelV4 } from "ai/test";
 import { EngineRegistry } from "@vraxis/agent-v";
 import { createBasicAiAgent } from "./basic-ai-sdk.ts";
-import { createPublishContributionTool } from "./approved-tool.ts";
+import { createEvidenceFirstPlanner, createPublishContributionTool } from "./approved-tool.ts";
 import { createLocalOllama } from "./ollama.ts";
 import { createRepositorySummaryRequest } from "./local-cli.ts";
 import { createStatefulRuntime } from "./sessions-and-events.ts";
@@ -27,6 +27,7 @@ const result = await basic.runtime.run(basic.agent, { scope: basic.scope, input:
 assert.equal(result.text, "example-ok");
 
 assert.equal(createPublishContributionTool(async () => ({ channelId: "devto" })).requiresApproval, true);
+assert.deepEqual(createEvidenceFirstPlanner().toolPolicy?.requiredSequence, ["read-product", "read-outcomes"]);
 assert.equal(createLocalOllama("example-model").ollama.agent.descriptor.provider, "ollama");
 assert.equal(createRepositorySummaryRequest(process.cwd()).request.workspaceAccess, "read-only");
 assert.equal(createStatefulRuntime(basic.runtime.engines.require("primary-agent", "tool-agent")).sessions.constructor.name, "MemorySessionStore");

@@ -41,6 +41,42 @@ test("fails closed when a required engine capability is absent", async () => {
   );
 });
 
+test("agent blueprints validate governed tool sequences before engine resolution", () => {
+  assert.throws(
+    () => defineAgent({
+      id: "planner",
+      name: "Planner",
+      engineId: "fake-agent",
+      instructions: "Read evidence first.",
+      skills: [],
+      tools: ["read-product"],
+      requiredCapabilities: [],
+      maxSteps: 2,
+      toolPolicy: { requiredSequence: ["read-product", "read-evidence"], afterRequired: "disable" },
+    }),
+    /requires tools it does not declare: read-evidence/,
+  );
+});
+
+test("agent composition rejects tool sequencing when the selected engine cannot enforce it", async () => {
+  const runtime = new AgentV({ engines: new EngineRegistry().register(new FakeToolAgentEngine()) });
+  const blueprint = defineAgent({
+    id: "planner",
+    name: "Planner",
+    engineId: "fake-agent",
+    instructions: "Read evidence first.",
+    skills: [],
+    tools: ["read-evidence"],
+    requiredCapabilities: [],
+    maxSteps: 2,
+    toolPolicy: { requiredSequence: ["read-evidence"], afterRequired: "disable" },
+  });
+  await assert.rejects(
+    runtime.run(blueprint, { scope: localExecutionScope("planner"), input: { prompt: "Plan." } }),
+    /does not support tool-sequencing/,
+  );
+});
+
 test("fails closed when a blueprint requests a tool outside its skills", async () => {
   const runtime = new AgentV({
     engines: new EngineRegistry().register(new FakeToolAgentEngine()),

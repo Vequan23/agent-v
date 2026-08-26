@@ -1,4 +1,6 @@
 import type { ApprovalPolicy, ApprovalRequest, StructuredGenerationRequest, StructuredGenerationResult, StructuredModelEngine, ToolAgentEngine, ToolAgentRequest, ToolAgentResult } from "../core/contracts.js";
+import { emptyToolExecutionAudit } from "../core/tool-policy.js";
+import { AgentVError } from "../core/errors.js";
 import { eventTimestamp, noopEventSink, type EventSink } from "../core/events.js";
 import type { EngineDescriptor } from "../core/types.js";
 
@@ -17,15 +19,18 @@ export class FakeStructuredModelEngine implements StructuredModelEngine {
 }
 
 export class FakeToolAgentEngine implements ToolAgentEngine {
-  readonly descriptor: EngineDescriptor = { id: "fake-agent", name: "Fake agent", kind: "tool-agent", capabilities: ["tools", "skills", "structured-output"] };
+  readonly descriptor: EngineDescriptor = { id: "fake-agent", name: "Fake agent", kind: "tool-agent", capabilities: ["tools", "skills", "structured-output", "tool-audit"] };
   readonly requests: ToolAgentRequest<unknown>[] = [];
   async run<T = string>(request: ToolAgentRequest<T>, events: EventSink = noopEventSink): Promise<ToolAgentResult<T>> {
+    if (request.toolPolicy?.requiredSequence?.length || request.toolPolicy?.afterRequired === "disable") {
+      throw new AgentVError("unsupported-capability", "Fake agent does not simulate tool sequencing.");
+    }
     this.requests.push(request);
     const runId = request.runId ?? "fake-run";
     await events.emit({ type: "run.started", runId, timestamp: eventTimestamp(), scope: request.scope, provenance: { engineId: this.descriptor.id, adapterStrategy: "fake-tool-agent-v1" } });
     const output = request.output ? request.output.parse({ ok: true }) : ("ok" as T);
     await events.emit({ type: "run.completed", runId, timestamp: eventTimestamp(), scope: request.scope, durationMs: 0 });
-    return { runId, output, text: "ok", steps: 1, provenance: { engineId: this.descriptor.id, adapterStrategy: "fake-tool-agent-v1" }, durationMs: 0 };
+    return { runId, output, text: "ok", steps: 1, provenance: { engineId: this.descriptor.id, adapterStrategy: "fake-tool-agent-v1" }, durationMs: 0, toolAudit: emptyToolExecutionAudit(request.toolPolicy) };
   }
   async stream<T = string>(request: ToolAgentRequest<T>, events?: EventSink) { return { events: (async function* () {})(), result: this.run(request, events) }; }
 }

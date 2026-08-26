@@ -25,7 +25,7 @@ function services(options: { runtime?: RuntimeReadiness; ollama?: DoctorOllamaRe
 
 test("doctor reports package, runtime, and Ollama readiness", async () => {
   const report = await doctorAgentV({ runtimeIds: ["codex"], ollamaModel: "qwen3:4b" }, services());
-  assert.equal(report.packageVersion, "0.4.0");
+  assert.equal(report.packageVersion, "0.5.0");
   assert.equal(report.ok, true);
   assert.equal(report.dependencies.find((item) => item.name === "ai")?.version, "7.0.79");
   assert.equal(report.runtimes[0]?.runtimeId, "codex");
