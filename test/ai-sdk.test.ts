@@ -59,6 +59,7 @@ test("AI SDK model resolution uses the requested model and scoped credential ref
     input: { prompt: "hello" },
   });
   assert.equal(result.text, "resolved");
+  assert.equal(result.provenance.adapterStrategy, "ai-sdk-v7-tool-agent");
   assert.deepEqual(selections, [{ modelId: "client-model", projectId: "consulting-engagement", credentialRef: "env://CLIENT_MODEL_KEY" }]);
 });
 

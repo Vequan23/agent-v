@@ -4,10 +4,11 @@
 
 It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## What works in 0.2
+## What works in 0.3
 
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
 - Codex CLI, OpenCode, and Claude Code runtime adapters with honest access-mode capabilities and bounded schema output. Cursor is discoverable but rejected for structured execution until its adapter can guarantee the contract.
+- Local Ollama models through an optional AI SDK 7-compatible adapter with daemon and installed-model readiness checks.
 - Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
 - Portable skills defined in code or loaded from standard `SKILL.md` packages.
 - Tenant/project/principal execution scope on every run, approval, event, session, and model-resolution request.
@@ -24,6 +25,12 @@ The optional AI SDK adapter requires a compatible peer:
 
 ```bash
 npm install ai
+```
+
+Ollama support uses the tool-capable AI SDK community provider and is installed only by products that need it:
+
+```bash
+npm install ai ai-sdk-ollama
 ```
 
 Node and local CLI adapters require Node.js 22.12 or newer. The core has no provider SDK dependency.
@@ -124,6 +131,27 @@ Every tool requested by an agent using skills must be allowed by those skills. M
 
 Engine profiles can select an engine/model/credential reference without changing an agent blueprint. A blueprint chooses either `engineId` or `profileId`, never both.
 
+Model resolvers can return authoritative provider/runtime provenance with the model. Every run records an `adapterStrategy`; local runtimes and Ollama also record the detected runtime version. This makes upstream protocol changes diagnosable from persisted run events.
+
+## Ollama
+
+```ts
+import { OllamaRuntime } from "agent-v/ollama";
+
+const ollama = new OllamaRuntime({
+  defaultModel: "your-installed-model",
+  // baseURL defaults to http://127.0.0.1:11434
+});
+
+const readiness = await ollama.inspect();
+if (readiness.availability === "ready") {
+  engines.register(ollama.agent);
+  engines.register(ollama.structured);
+}
+```
+
+Resolution checks the live daemon version and installed model list before creating the AI SDK model. Missing daemons, rejected credentials, unexpected readiness responses, and absent models fail closed. Remote Ollama servers can provide `baseURL`, headers, and an API key when the host has resolved its credential reference.
+
 ## Skills
 
 `agent-v/node` exports `loadSkillPackage()` and `discoverSkillPackages()`. A package is a directory containing a standard `SKILL.md` plus optional `scripts/`, `references/`, and `assets/` directories. Discovery validates and indexes these resources but never executes scripts.
@@ -134,6 +162,7 @@ The standard `allowed-tools` field is preserved as `preapprovedTools`, but it do
 
 - `agent-v/ai-sdk`: AI SDK structured and tool-agent engines.
 - `agent-v/local-cli`: bounded local coding runtimes and readiness probes.
+- `agent-v/ollama`: optional local/remote Ollama structured and tool-agent engines.
 - `agent-v/node`: JSON config/session stores, JSONL event ledger, and filesystem skills.
 - `agent-v/testing`: deterministic engines and approval policies.
 

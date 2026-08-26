@@ -73,6 +73,8 @@ The Node adapter loads the open Agent Skills directory format: `SKILL.md` with o
 
 The AI SDK adapter resolves a model per run. Resolution can use a static model, a model registry, or a host function receiving model id, run id, execution scope, metadata, and credential reference. Provenance describes what was actually selected; a request cannot relabel a static model as something else.
 
+Every provenance record includes an adapter strategy identifier. Local CLI adapters additionally detect and record the executable version before invocation. Model resolvers may return authoritative runtime provenance with their model; the Ollama resolver uses this to record its live daemon version. These fields are evidence for compatibility diagnosis, not promises that an unverified version is supported.
+
 Profiles are configuration, not engines. They bind a blueprint to an engine id, model id, and opaque credential reference. The host resolves secrets at execution time; configuration and events contain references, never credential values.
 
 This keeps the core compatible with direct provider clients, the Vercel AI SDK, LangGraph, durable workflow runtimes, local models, and future harnesses without adopting their types.
@@ -115,6 +117,8 @@ Local coding agents are fallible external systems:
 - safe failure categories are emitted without persisting raw diagnostics.
 
 Codex supports enforced read-only and workspace-write modes. OpenCode currently advertises workspace-write only. Claude Code advertises read-only only. Cursor remains discoverable but does not advertise structured output, so the engine refuses to run it through the structured contract.
+
+Ollama is a model runtime rather than a coding CLI and therefore lives in its own optional adapter. It verifies the native version and tags endpoints, confirms the requested model is installed, and delegates model/tool protocol behavior to the AI SDK 7-compatible `ai-sdk-ollama` provider. Products that do not use Ollama do not load or require that dependency.
 
 ## Product boundary
 

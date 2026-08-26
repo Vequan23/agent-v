@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Record an adapter strategy on every run and the detected executable version on local CLI runs.
+- Add a first-class optional Ollama adapter for AI SDK 7 with daemon readiness, installed-model checks, structured generation, tool agents, and runtime-aware provenance.
+- Allow AI SDK model resolvers to return authoritative provenance alongside the resolved model.
+
 ## 0.2.0
 
 - Require tenant, project, principal, role, permission, and data-classification scope on every execution.

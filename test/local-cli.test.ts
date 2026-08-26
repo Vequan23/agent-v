@@ -29,7 +29,10 @@ test("readiness is version-sensitive and execution validates output", async () =
   const engine = new LocalCliRuntimeEngine({ runner });
   assert.equal((await engine.inspect("codex")).verification, "unverified");
   const output = defineOutput({ name: "ok", jsonSchema: { type: "object" }, parse(value) { if ((value as { ok?: unknown }).ok !== true) throw new Error("invalid"); return { ok: true }; } });
-  assert.deepEqual((await engine.run({ runtimeId: "codex", scope: localExecutionScope("test"), input: { prompt: "x" }, output })).output, { ok: true });
+  const result = await engine.run({ runtimeId: "codex", scope: localExecutionScope("test"), input: { prompt: "x" }, output });
+  assert.deepEqual(result.output, { ok: true });
+  assert.equal(result.provenance.runtimeVersion, "codex 1.0");
+  assert.equal(result.provenance.adapterStrategy, "codex-exec-json-v1");
   assert.equal((await engine.probe("codex")).verification, "ready");
   assert.equal((await engine.inspect("codex")).verification, "ready");
   version = "codex 2.0";

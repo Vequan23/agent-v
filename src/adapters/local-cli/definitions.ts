@@ -12,6 +12,7 @@ export interface RuntimeInvocationInput {
 export interface LocalRuntimeDefinition {
   id: string;
   name: string;
+  strategyId: string;
   command: string;
   versionArgs: readonly string[];
   capabilities: readonly AgentCapability[];
@@ -22,6 +23,7 @@ export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "codex",
     name: "Codex CLI",
+    strategyId: "codex-exec-json-v1",
     command: "codex",
     versionArgs: ["--version"],
     capabilities: ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"],
@@ -47,6 +49,7 @@ export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "opencode",
     name: "OpenCode",
+    strategyId: "opencode-run-json-v1",
     command: "opencode",
     versionArgs: ["--version"],
     capabilities: ["structured-output", "local-workspace", "workspace-write", "artifacts"],
@@ -57,6 +60,7 @@ export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "claude-code",
     name: "Claude Code",
+    strategyId: "claude-print-json-v1",
     command: "claude",
     versionArgs: ["--version"],
     capabilities: ["structured-output", "local-workspace", "read-only-workspace", "artifacts"],
@@ -76,6 +80,7 @@ export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "cursor",
     name: "Cursor Agent",
+    strategyId: "cursor-print-json-v1",
     command: "cursor-agent",
     versionArgs: ["--version"],
     capabilities: ["local-workspace", "workspace-write", "artifacts"],

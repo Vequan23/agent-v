@@ -23,6 +23,7 @@ import {
   type EventSink,
   type JsonValue,
   type OutputContract,
+  type RunProvenance,
   type StructuredGenerationRequest,
   type StructuredGenerationResult,
   type ToolAgentEngine,
@@ -39,6 +40,9 @@ export interface AiSdkEngineOptions {
   resolveModel?: AiSdkModelResolver;
   provider?: string;
   modelId?: string;
+  adapterStrategy?: string;
+  runtime?: string;
+  runtimeVersion?: string;
 }
 
 export interface AiSdkModelSelection {
@@ -50,19 +54,40 @@ export interface AiSdkModelSelection {
   options?: import("../../core/index.js").JsonObject;
 }
 
-export type AiSdkModelResolver = (selection: AiSdkModelSelection) => LanguageModel | Promise<LanguageModel>;
+export interface AiSdkResolvedModel {
+  model: LanguageModel;
+  provenance?: Partial<Omit<RunProvenance, "engineId">>;
+}
 
-async function selectModel(options: AiSdkEngineOptions, selection: AiSdkModelSelection): Promise<LanguageModel> {
-  if (options.resolveModel) return options.resolveModel(selection);
+export type AiSdkModelResolver = (selection: AiSdkModelSelection) => LanguageModel | AiSdkResolvedModel | Promise<LanguageModel | AiSdkResolvedModel>;
+
+function resolvedModel(model: LanguageModel | AiSdkResolvedModel): AiSdkResolvedModel {
+  return typeof model === "object" && model !== null && "model" in model ? model : { model };
+}
+
+async function selectModel(options: AiSdkEngineOptions, selection: AiSdkModelSelection): Promise<AiSdkResolvedModel> {
+  if (options.resolveModel) return resolvedModel(await options.resolveModel(selection));
   if (selection.modelId) {
     const registered = options.models?.[selection.modelId];
-    if (registered) return registered;
-    if (options.model && (!options.modelId || options.modelId === selection.modelId)) return options.model;
+    if (registered) return { model: registered };
+    if (options.model && (!options.modelId || options.modelId === selection.modelId)) return { model: options.model };
     throw new AgentVError("engine-unavailable", `No AI SDK model named ${selection.modelId} is registered.`);
   }
-  if (options.model) return options.model;
-  if (options.modelId && options.models?.[options.modelId]) return options.models[options.modelId]!;
+  if (options.model) return { model: options.model };
+  if (options.modelId && options.models?.[options.modelId]) return { model: options.models[options.modelId]! };
   throw new AgentVError("configuration-invalid", `AI SDK engine ${options.id} requires a default model or model resolver.`);
+}
+
+function provenanceFor(options: AiSdkEngineOptions, engineId: string, modelId: string | undefined, kind: "structured-model" | "tool-agent", selected?: AiSdkResolvedModel): RunProvenance {
+  return {
+    engineId,
+    adapterStrategy: options.adapterStrategy ?? `ai-sdk-v7-${kind}`,
+    provider: options.provider,
+    model: modelId,
+    runtime: options.runtime,
+    runtimeVersion: options.runtimeVersion,
+    ...selected?.provenance,
+  };
 }
 
 function contractSchema<T>(contract: OutputContract<T>) {
@@ -152,13 +177,21 @@ export class AiSdkStructuredModelEngine {
     const runId = request.runId ?? crypto.randomUUID();
     const started = Date.now();
     const modelId = request.model ?? this.descriptor.model;
-    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: modelId };
+    let selected: AiSdkResolvedModel;
+    try {
+      selected = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
+    } catch (error) {
+      const failure = safeFailure(error);
+      await emit(sink, { ...eventBase(request, runId), type: "run.started", provenance: provenanceFor(this.options, this.descriptor.id, modelId, "structured-model") });
+      await emit(sink, { ...eventBase(request, runId), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });
+      throw error;
+    }
+    const provenance = provenanceFor(this.options, this.descriptor.id, modelId, "structured-model", selected);
     await emit(sink, { ...eventBase(request, runId), type: "run.started", provenance });
     try {
-      const model = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
       await emit(sink, { ...eventBase(request, runId), type: "model.started", step: 1 });
       const result = await generateText({
-        model,
+        model: selected.model,
         system: request.input.instructions,
         prompt: formatInput(request.input),
         output: Output.object({
@@ -301,11 +334,19 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
     const runId = request.runId ?? crypto.randomUUID();
     const started = Date.now();
     const modelId = request.model ?? this.descriptor.model;
-    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: modelId };
+    let selected: AiSdkResolvedModel;
+    try {
+      selected = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
+    } catch (error) {
+      const failure = safeFailure(error);
+      await emit(sink, { ...eventBase(request, runId), type: "run.started", provenance: provenanceFor(this.options, this.descriptor.id, modelId, "tool-agent") });
+      await emit(sink, { ...eventBase(request, runId), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });
+      throw error;
+    }
+    const provenance = provenanceFor(this.options, this.descriptor.id, modelId, "tool-agent", selected);
     await emit(sink, { ...eventBase(request, runId), type: "run.started", provenance });
     try {
-      const model = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
-      const invocation = await this.generate(request, sink, runId, model);
+      const invocation = await this.generate(request, sink, runId, selected.model);
       const durationMs = Date.now() - started;
       await emit(sink, { ...eventBase(request, runId), type: "run.completed", durationMs, usage: invocation.usage });
       return { runId, ...invocation, provenance, durationMs };
@@ -328,14 +369,22 @@ export class AiSdkToolAgentEngine implements ToolAgentEngine {
     const runId = request.runId ?? crypto.randomUUID();
     const started = Date.now();
     const modelId = request.model ?? this.descriptor.model;
-    const provenance = { engineId: this.descriptor.id, provider: this.descriptor.provider, model: modelId };
     const result = (async (): Promise<ToolAgentResult<T>> => {
+      let selected: AiSdkResolvedModel;
+      try {
+        selected = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
+      } catch (error) {
+        const failure = safeFailure(error);
+        await emit(combined, { ...eventBase(request, runId), type: "run.started", provenance: provenanceFor(this.options, this.descriptor.id, modelId, "tool-agent") });
+        await emit(combined, { ...eventBase(request, runId), type: "run.failed", code: failure.code, message: failure.message, retryable: failure.retryable });
+        throw error;
+      }
+      const provenance = provenanceFor(this.options, this.descriptor.id, modelId, "tool-agent", selected);
       await emit(combined, { ...eventBase(request, runId), type: "run.started", provenance });
       try {
-        const model = await selectModel(this.options, { modelId, runId, metadata: request.metadata, scope: request.scope, credentialRef: request.credentialRef, options: request.engineOptions });
         const tools = toAiTools(request.tools ?? [], request as ToolAgentRequest<unknown>, combined, runId);
         const common = {
-          model,
+          model: selected.model,
           instructions: request.input.instructions,
           tools,
           stopWhen: isStepCount(request.maxSteps ?? 20),

@@ -153,11 +153,21 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
     if (!runtime.capabilities.includes(accessCapability)) {
       throw new AgentVError("unsupported-capability", `${runtime.name} does not support ${workspaceAccess} access through this adapter.`);
     }
+    const installed = await this.inspect(runtime.id);
+    if (installed.availability !== "installed" || !installed.version) {
+      throw new AgentVError(installed.failure?.code ?? "engine-unavailable", installed.detail);
+    }
     const temporary = await mkdtemp(join(tmpdir(), "agent-v-runtime-"));
     const workspace = request.workspacePath ? resolve(request.workspacePath) : temporary;
     const outputFile = join(temporary, "last-message.json");
     const schemaFile = join(temporary, "output-schema.json");
-    const provenance = { engineId: this.descriptor.id, runtime: runtime.id, model: request.runtimeModel ?? "runtime default" };
+    const provenance = {
+      engineId: this.descriptor.id,
+      adapterStrategy: runtime.strategyId,
+      runtime: runtime.id,
+      runtimeVersion: installed.version,
+      model: request.runtimeModel ?? "runtime default",
+    };
     const eventBase = () => ({ runId, timestamp: eventTimestamp(), scope: request.scope, ...(request.traceId ? { traceId: request.traceId } : {}) });
     await sink.emit({ ...eventBase(), type: "run.started", provenance });
     try {

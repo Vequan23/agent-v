@@ -128,9 +128,11 @@ export interface TokenUsage {
 
 export interface RunProvenance {
   engineId: string;
+  adapterStrategy: string;
   provider?: string;
   model?: string;
   runtime?: string;
+  runtimeVersion?: string;
 }
 
 export type FailureCode =
