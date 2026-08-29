@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.5.2",
+  "packageVersion": "0.6.0",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
@@ -37,6 +37,11 @@
           "capabilities": ["local-workspace", "workspace-write", "artifacts"]
         }
       }
+    },
+    "skill-inventory": {
+      "format": "agent-skills-filesystem-v1",
+      "runtimes": ["codex", "claude-code", "cursor", "opencode"],
+      "remoteSourcePolicy": "record-without-downloading"
     }
   }
 }

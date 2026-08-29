@@ -4,7 +4,7 @@ import { AgentV, localExecutionScope, resolveToolExecutionPolicy } from "../dist
 import { AiSdkToolAgentEngine } from "../dist/adapters/ai-sdk/index.js";
 import { LocalCliRuntimeEngine } from "../dist/adapters/local-cli/index.js";
 import { OllamaRuntime } from "../dist/adapters/ollama/index.js";
-import { JsonSessionStore, loadSkillPackage } from "../dist/node/index.js";
+import { discoverAgentSkillInventory, JsonSessionStore, loadSkillPackage } from "../dist/node/index.js";
 import { FakeToolAgentEngine } from "../dist/testing/index.js";
 
 assert.equal(typeof AgentV, "function");
@@ -15,6 +15,7 @@ assert.equal(typeof LocalCliRuntimeEngine, "function");
 assert.equal(typeof OllamaRuntime, "function");
 assert.equal(typeof JsonSessionStore, "function");
 assert.equal(typeof loadSkillPackage, "function");
+assert.equal(typeof discoverAgentSkillInventory, "function");
 assert.equal(typeof FakeToolAgentEngine, "function");
 
 const cli = spawnSync(process.execPath, ["dist/cli/index.js", "--help"], { encoding: "utf8" });

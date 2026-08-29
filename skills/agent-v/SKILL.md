@@ -2,7 +2,7 @@
 name: agent-v
 description: Integrate or extend the agent-v TypeScript library for scoped agents, tools, approvals, AI SDK models, local coding runtimes, Ollama, sessions, events, or Agent Skills.
 metadata:
-  version: "0.5.2"
+  version: "0.6.0"
 ---
 
 # Use agent-v accurately
@@ -15,7 +15,7 @@ Read the installed package's `README.md` and type declarations before coding. Do
 - Use `@vraxis/agent-v/ai-sdk` for structured model calls and tool-loop agents backed by AI SDK 7.
 - Use `@vraxis/agent-v/ollama` only for an Ollama model server. Inspect readiness before registration.
 - Use `@vraxis/agent-v/local-cli` when Codex, OpenCode, Claude Code, or another coding CLI must operate on a workspace.
-- Use `@vraxis/agent-v/node` for local sessions, run ledgers, diagnostics, and filesystem Agent Skills.
+- Use `@vraxis/agent-v/node` for local sessions, run ledgers, diagnostics, filesystem Agent Skills, and cross-runtime skill inventory.
 - Use `@vraxis/agent-v/testing` for deterministic tests without provider calls.
 
 Do not substitute a coding CLI adapter for an ordinary model provider or treat Ollama as a coding-workspace runtime.

@@ -183,6 +183,29 @@ Resolution checks the live daemon version and installed model list before creati
 
 The standard `allowed-tools` field is preserved as `preapprovedTools`, but it does not bypass host policy. It also seeds the skill's tool allowlist. Tools marked `requiresApproval` still require an `ApprovalPolicy` at execution time.
 
+### Cross-runtime skill inventory
+
+`discoverAgentSkillInventory()` provides one local inventory across Codex, Claude Code, Cursor, OpenCode, and shared Agent Skills locations. Each result records:
+
+- the physical manifest and package root;
+- every runtime that can discover that location;
+- user, project, plugin/cache, or configured scope;
+- whether the strict agent-v portable contract can load it;
+- every exposure when the same physical skill is linked into more than one runtime.
+
+The inventory checks native user and project directories, walks project settings from the current directory to the repository root, scans local plugin/cache roots, and reads local and remote sources declared by OpenCode JSON/JSONC configuration. Remote catalogs and unsupported configured patterns are reported as unresolved sources; agent-v does not download them during local discovery.
+
+```ts
+import { discoverAgentSkillInventory } from "@vraxis/agent-v/node";
+
+const inventory = await discoverAgentSkillInventory({ cwd: process.cwd() });
+for (const skill of inventory.skills) {
+  console.log(skill.name, skill.runtimes, skill.agentVCompatible);
+}
+```
+
+Runtime built-ins that are not represented by local files or a public inventory API are outside filesystem discovery. Products should label the result “discovered local skills,” not claim access to hidden runtime internals.
+
 ## Adapters
 
 - `@vraxis/agent-v/ai-sdk`: AI SDK structured and tool-agent engines.

@@ -73,6 +73,8 @@ When an agent selects skills, every requested tool must appear in their combined
 
 The Node adapter loads the open Agent Skills directory format: `SKILL.md` with optional scripts, references, and assets. Loading only validates and indexes content. Script execution requires a separate explicit tool or sandbox owned by the host.
 
+The Node adapter also owns cross-runtime filesystem inventory for Codex, Claude Code, Cursor, OpenCode, and shared Agent Skills sources. Inventory is descriptive rather than authoritative: it records physical packages, runtime exposure, scope, and strict agent-v compatibility without executing skills or weakening the portable loader. Remote configured catalogs are surfaced as unresolved until a host explicitly chooses a network policy. Runtime-owned built-ins without local files or a public listing contract are not fabricated.
+
 ## Models, profiles, and credentials
 
 The AI SDK adapter resolves a model per run. Resolution can use a static model, a model registry, or a host function receiving model id, run id, execution scope, metadata, and credential reference. Provenance describes what was actually selected; a request cannot relabel a static model as something else.

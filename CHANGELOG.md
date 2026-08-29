@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- Add a provider-aware local Agent Skills inventory for Codex, Claude Code, Cursor, OpenCode, shared directories, and local plugin sources.
+- Preserve runtime exposure and scope while deduplicating symlinked physical skills.
+- Read OpenCode JSON/JSONC skill sources and report remote or unsupported sources without downloading them.
+- Keep runtime-specific manifests visible without weakening agent-v's strict portable skill loader.
+
 ## 0.5.2
 
 - Clear stale failure evidence when a later bounded runtime probe succeeds.
