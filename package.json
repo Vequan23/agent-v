@@ -1,6 +1,6 @@
 {
   "name": "@vraxis/agent-v",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A provider-neutral engine for building inspectable, extensible agentic products.",
   "repository": {
     "type": "git",
@@ -46,6 +46,26 @@
       "types": "./dist/adapters/ai-sdk/index.d.ts",
       "import": "./dist/adapters/ai-sdk/index.js"
     },
+    "./providers": {
+      "types": "./dist/adapters/providers/index.d.ts",
+      "import": "./dist/adapters/providers/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    },
+    "./skills": {
+      "types": "./dist/skills/index.d.ts",
+      "import": "./dist/skills/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
+    },
+    "./tools/node": {
+      "types": "./dist/tools/node/index.d.ts",
+      "import": "./dist/tools/node/index.js"
+    },
     "./local-cli": {
       "types": "./dist/adapters/local-cli/index.d.ts",
       "import": "./dist/adapters/local-cli/index.js"
@@ -72,27 +92,23 @@
     "test:package": "node test/package-smoke.mjs",
     "check": "npm run typecheck && npm test && npm run build && npm run test:examples && npm run test:package && npm pack --dry-run --cache .npm-cache"
   },
-  "peerDependencies": {
-    "ai": ">=7.0.0 <8",
-    "ai-sdk-ollama": ">=4.2.0 <5"
-  },
-  "peerDependenciesMeta": {
-    "ai": {
-      "optional": true
-    },
-    "ai-sdk-ollama": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@types/node": "^24.10.0",
-    "ai": "^7.0.79",
-    "ai-sdk-ollama": "^4.2.0",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.46",
+    "@ai-sdk/deepseek": "^3.0.37",
+    "@ai-sdk/google": "^4.0.58",
+    "@ai-sdk/openai": "^4.0.52",
+    "@ai-sdk/openai-compatible": "^3.0.41",
+    "ai": "^7.0.85",
+    "ai-sdk-ollama": "^4.2.0",
     "jsonc-parser": "^3.3.1",
     "yaml": "^2.9.0"
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring": "^1.3.0"
   }
 }

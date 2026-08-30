@@ -267,7 +267,7 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
         if (definition.requiresApproval) {
           if (!request.approvalPolicy) throw new AgentVError("permission-denied", `Tool ${definition.name} requires an approval policy.`);
           const approvalId = crypto.randomUUID();
-          const reason = `${definition.name} requires explicit approval before execution.`;
+          const reason = definition.approvalReason ?? `${definition.name} requires explicit approval before execution.`;
           await emit(sink, { ...eventBase(request, runId), type: "approval.requested", approvalId, toolName: definition.name, reason });
           const decision = await request.approvalPolicy.decide({
             id: approvalId,
@@ -275,6 +275,7 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
             toolName: definition.name,
             input,
             reason,
+            category: definition.approvalCategory ?? "other",
             toolVersion: definition.version,
             risk: definition.risk,
             sideEffect: definition.sideEffect,

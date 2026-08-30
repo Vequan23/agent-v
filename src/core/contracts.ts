@@ -49,12 +49,18 @@ export interface AgentTool<I = unknown, O = JsonValue> {
   input: OutputContract<I>;
   output: OutputContract<O>;
   requiresApproval: boolean;
+  /** Stable category a host can use to render and decide approval requests. */
+  approvalCategory?: ApprovalCategory;
+  /** User-facing explanation of the authority requested by this tool. */
+  approvalReason?: string;
   risk: ToolRisk;
   sideEffect: ToolSideEffect;
   requiredPermissions: readonly string[];
   timeoutMs: number;
   execute(input: I, context: ToolExecutionContext): Promise<O> | O;
 }
+
+export type ApprovalCategory = "write" | "command" | "network" | "browser" | "credentials" | "destructive" | "other";
 
 export type ToolRisk = "read" | "write" | "external-side-effect" | "privileged";
 export type ToolSideEffect = "none" | "idempotent" | "non-idempotent";
@@ -65,6 +71,7 @@ export interface ApprovalRequest {
   toolName: string;
   input: unknown;
   reason: string;
+  category?: ApprovalCategory;
   metadata?: JsonObject;
   toolVersion?: string;
   risk: ToolRisk;
@@ -189,6 +196,12 @@ export interface RunEventStore {
 
 export interface CredentialResolver {
   resolve(reference: string): Promise<string | undefined>;
+}
+
+/** Host-owned credential persistence. Agent configuration stores references only. */
+export interface CredentialStore extends CredentialResolver {
+  set(reference: string, value: string): Promise<void>;
+  delete(reference: string): Promise<boolean>;
 }
 
 export interface SessionSaveOptions {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { doctorAgentV, type AgentVDoctorServices, type DoctorOllamaReadiness } from "../src/node/index.ts";
-import type { RuntimeReadiness } from "../src/core/index.ts";
+import { AGENT_V_VERSION, type RuntimeReadiness } from "../src/core/index.ts";
 
 function runtime(runtimeId: string, overrides: Partial<RuntimeReadiness> = {}): RuntimeReadiness {
   return {
@@ -25,7 +25,7 @@ function services(options: { runtime?: RuntimeReadiness; ollama?: DoctorOllamaRe
 
 test("doctor reports package, runtime, and Ollama readiness", async () => {
   const report = await doctorAgentV({ runtimeIds: ["codex"], ollamaModel: "qwen3:4b" }, services());
-  assert.equal(report.packageVersion, "0.6.0");
+  assert.equal(report.packageVersion, AGENT_V_VERSION);
   assert.equal(report.ok, true);
   assert.equal(report.dependencies.find((item) => item.name === "ai")?.version, "7.0.79");
   assert.equal(report.runtimes[0]?.runtimeId, "codex");

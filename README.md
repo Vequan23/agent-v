@@ -4,16 +4,19 @@
 
 It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## What works in 0.5
+## What works in 0.7
 
+- Batteries-included hosted provider resolution for OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
 - Codex CLI, OpenCode, and Claude Code runtime adapters with honest access-mode capabilities and bounded schema output. Cursor is discoverable but rejected for structured execution until its adapter can guarantee the contract.
 - Local Ollama models through an optional AI SDK 7-compatible adapter with daemon and installed-model readiness checks.
 - Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
+- Opt-in standard tools for arithmetic, time, schema validation, bounded workspaces, Git, allowlisted commands, HTTP, and host-controlled browsers.
+- Categorized, deny-by-default approval policy plus coding, research, review, and document starter recipes.
 - Host-enforced required tool sequences and redacted tool-call audit evidence for governed evidence-first agents.
 - Portable skills defined in code or loaded from standard `SKILL.md` packages.
 - Tenant/project/principal execution scope on every run, approval, event, session, and model-resolution request.
-- Memory and local JSON/JSONL persistence with tenant/project isolation.
+- Memory and local JSON/JSONL persistence with tenant/project isolation, plus environment and native system-keyring credential infrastructure.
 - Deterministic fakes, provider-free tests, built-package smoke testing, and CI on Node 22 and 24.
 - Packaged guidance for coding agents, executable consumer examples, compatibility metadata, and a safe readiness doctor.
 
@@ -23,19 +26,7 @@ It is an engine, not a chatbot framework and not a repository of every product-s
 npm install @vraxis/agent-v
 ```
 
-The optional AI SDK adapter requires a compatible peer:
-
-```bash
-npm install ai
-```
-
-Ollama support uses the tool-capable AI SDK community provider and is installed only by products that need it:
-
-```bash
-npm install ai ai-sdk-ollama
-```
-
-Node and local CLI adapters require Node.js 22.12 or newer. The core has no provider SDK dependency.
+Hosted providers, AI SDK 7, and Ollama support are included. Native system-keyring binaries are installed as an optional platform dependency; environments without a supported credential manager fail explicitly and never fall back to plaintext. Node and local CLI adapters require Node.js 22.12 or newer. The core still imports no provider SDK or Node-only module.
 
 ## Define a tool, skill, and agent
 
@@ -127,6 +118,60 @@ const scope = {
 
 Every tool requested by an agent using skills must be allowed by those skills. Missing grants fail before provider execution; they are never silently filtered.
 
+## Five-minute runtime composition
+
+`@vraxis/agent-v/runtime` composes either a built-in provider profile or a custom `ToolAgentEngine`. It registers calculator and date/time tools by default; every capability with external authority remains opt-in.
+
+```ts
+import { createAgentRuntime } from "@vraxis/agent-v/runtime";
+import { createStandardApprovalPolicy } from "@vraxis/agent-v/tools";
+import { createWorkspaceTools } from "@vraxis/agent-v/tools/node";
+
+const workspaceTools = await createWorkspaceTools({
+  rootPath: approvedProjectRoot,
+  allowedCommands: ["npm", "git"],
+});
+
+const app = createAgentRuntime({
+  execution: {
+    type: "provider",
+    profile: {
+      id: "primary",
+      name: "Primary model",
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      credentialRef: "keychain://providers/anthropic",
+    },
+    credentials,
+  },
+  agent: {
+    id: "product-coder",
+    name: "Product coder",
+    instructions: productOwnedInstructions,
+    recipe: "coding",
+  },
+  tools: workspaceTools,
+  approvalPolicy: createStandardApprovalPolicy({
+    categories: {
+      write: requestApprovalInProductUI,
+      command: requestApprovalInProductUI,
+    },
+  }),
+});
+
+// await app.run({ scope, input: { prompt } });
+```
+
+The factory defaults to a deny-all approval policy. It never infers a workspace, command, network host, browser origin, credential decision, or destructive capability.
+
+## Standard tools and skills
+
+- `@vraxis/agent-v/tools` provides calculator, date/time, named output-contract validation, allowlisted HTTP, browser-controller tools, and categorized approval policies.
+- `@vraxis/agent-v/tools/node` provides canonical-root filesystem reads/writes/edits, Git status/diff, and argument-array command execution with an explicit allowlist. Filesystem tools do not follow symlinks outside the approved root. Local commands run with the host user's authority; the package constrains cwd and avoids a shell but does not claim OS sandboxing.
+- `@vraxis/agent-v/skills` provides opt-in operational skills and `coding`, `research`, `review`, and `document` recipes.
+
+Recipes never supply product prompts or domain policy. A product still owns its instructions, scope, persistence, evidence rules, and approval experience. HTTP redirects are returned rather than followed automatically, and browser tools require a host controller plus an explicit origin allowlist.
+
 ## Governed tool phases
 
 An agent can require exact tool reads before final synthesis without relying on prompt compliance:
@@ -158,6 +203,33 @@ Engine profiles can select an engine/model/credential reference without changing
 
 Model resolvers can return authoritative provider/runtime provenance with the model. Every run records an `adapterStrategy`; local runtimes and Ollama also record the detected runtime version. This makes upstream protocol changes diagnosable from persisted run events.
 
+### Built-in hosted providers
+
+Use `@vraxis/agent-v/providers` when the product should not construct provider SDK models itself:
+
+```ts
+import { AgentV, EngineRegistry } from "@vraxis/agent-v";
+import { ProviderRuntime, defineProviderProfile } from "@vraxis/agent-v/providers";
+import { SystemCredentialStore } from "@vraxis/agent-v/node";
+
+const credentials = new SystemCredentialStore({ service: "example-app" });
+await credentials.set("keychain://providers/openai", apiKeyFromYourSettingsForm);
+
+const providers = new ProviderRuntime({ credentials });
+const profile = defineProviderProfile({
+  id: "primary-provider",
+  name: "Primary provider",
+  provider: "openai",
+  model: "gpt-5-mini",
+  credentialRef: "keychain://providers/openai",
+});
+
+const engines = new EngineRegistry().register(providers.agent).register(providers.structured);
+const runtime = new AgentV({ engines });
+```
+
+Persist `profile`, not `apiKeyFromYourSettingsForm`. `ProviderRuntime.inspect(profile)` checks configuration and credential availability without contacting the provider. The same profile supports OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, or a custom OpenAI-compatible HTTPS/loopback endpoint. Product prompts, UI, profile ownership, and the decision to send data remotely remain with the host.
+
 ## Ollama
 
 ```ts
@@ -182,6 +254,8 @@ Resolution checks the live daemon version and installed model list before creati
 `@vraxis/agent-v/node` exports `loadSkillPackage()` and `discoverSkillPackages()`. A package is a directory containing a standard `SKILL.md` plus optional `scripts/`, `references/`, and `assets/` directories. Discovery validates and indexes these resources but never executes scripts.
 
 The standard `allowed-tools` field is preserved as `preapprovedTools`, but it does not bypass host policy. It also seeds the skill's tool allowlist. Tools marked `requiresApproval` still require an `ApprovalPolicy` at execution time.
+
+Portable packages can declare space-separated `metadata.agent-v-required-permissions` and `metadata.agent-v-trust` (`bundled`, `local`, or `external`). Required permissions are checked before provider execution. Trust is descriptive provenance and never grants a permission or approval.
 
 ### Cross-runtime skill inventory
 
@@ -209,9 +283,10 @@ Runtime built-ins that are not represented by local files or a public inventory 
 ## Adapters
 
 - `@vraxis/agent-v/ai-sdk`: AI SDK structured and tool-agent engines.
+- `@vraxis/agent-v/providers`: hosted provider catalog, profile builder, model resolver, configuration inspection, and normalized provider provenance.
 - `@vraxis/agent-v/local-cli`: bounded local coding runtimes and readiness probes.
 - `@vraxis/agent-v/ollama`: optional local/remote Ollama structured and tool-agent engines.
-- `@vraxis/agent-v/node`: JSON config/session stores, JSONL event ledger, and filesystem skills.
+- `@vraxis/agent-v/node`: JSON config/session stores, JSONL event ledger, filesystem skills, environment credential resolution, and native system-keyring storage.
 - `@vraxis/agent-v/testing`: deterministic engines and approval policies.
 
 Local CLI discovery and readiness are separate. An executable is `installed`; only a bounded, authenticated, schema-valid probe is `ready`. OpenCode advertises workspace-write only, so a default read-only request fails closed instead of weakening the requested policy.

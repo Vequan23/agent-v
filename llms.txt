@@ -1,6 +1,6 @@
 # agent-v
 
-> Provider-neutral TypeScript execution contracts for scoped agents, validated tools, approvals, AI SDK models, local coding runtimes, Ollama, sessions, events, and portable skills.
+> Provider-neutral TypeScript execution contracts for scoped agents, validated standard tools, categorized approvals, built-in hosted providers, local coding runtimes, Ollama, secure credential references, sessions, events, portable skills, and starter recipes.
 
 ## Canonical guidance
 

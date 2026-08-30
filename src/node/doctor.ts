@@ -79,10 +79,10 @@ async function inspectOllama(options: { baseURL?: string }): Promise<DoctorOllam
     return {
       availability: missing ? "dependency-missing" : "unreachable",
       models: [],
-      detail: missing ? "The optional Ollama adapter dependencies are not installed." : "The Ollama adapter could not be loaded.",
+      detail: missing ? "The bundled Ollama adapter dependencies are not installed correctly." : "The Ollama adapter could not be loaded.",
       failure: {
         code: missing ? "dependency-missing" : "engine-unavailable",
-        message: missing ? "Install ai and ai-sdk-ollama to use @vraxis/agent-v/ollama." : "The Ollama adapter could not be loaded.",
+        message: missing ? "Reinstall @vraxis/agent-v to restore its Ollama dependencies." : "The Ollama adapter could not be loaded.",
         retryable: false,
       },
     };
@@ -106,8 +106,8 @@ export async function doctorAgentV(options: AgentVDoctorOptions = {}, services: 
   const packageNames = ["@vraxis/agent-v", "ai", "ai-sdk-ollama"] as const;
   const purposes = {
     "@vraxis/agent-v": "core execution contracts",
-    ai: "optional AI SDK adapter",
-    "ai-sdk-ollama": "optional Ollama adapter",
+    ai: "bundled AI SDK execution",
+    "ai-sdk-ollama": "bundled Ollama adapter",
   } as const;
   const dependencies = await Promise.all(packageNames.map(async (name): Promise<DoctorDependency> => {
     const version = name === "@vraxis/agent-v" ? AGENT_V_VERSION : await services.packageVersion(name);
@@ -122,7 +122,7 @@ export async function doctorAgentV(options: AgentVDoctorOptions = {}, services: 
     if (dependency.name === "@vraxis/agent-v" && !dependency.installed) {
       issues.push({ severity: "error", component: dependency.name, message: "The @vraxis/agent-v package is not resolvable." });
     } else if (!dependency.installed) {
-      issues.push({ severity: "info", component: dependency.name, message: `${dependency.name} is not installed because its adapter is optional.` });
+      issues.push({ severity: "error", component: dependency.name, message: `${dependency.name} is missing from the agent-v installation.`, remediation: "Reinstall @vraxis/agent-v." });
     }
   }
   for (const runtime of runtimes) {
@@ -146,7 +146,7 @@ export async function doctorAgentV(options: AgentVDoctorOptions = {}, services: 
       severity: ollamaRequested ? "error" : dependencies.find((dependency) => dependency.name === "ai-sdk-ollama")?.installed ? "warning" : "info",
       component: "ollama",
       message: ollama.detail,
-      remediation: ollama.availability === "dependency-missing" ? "Install ai and ai-sdk-ollama." : "Start or configure Ollama, then rerun doctor.",
+      remediation: ollama.availability === "dependency-missing" ? "Reinstall @vraxis/agent-v." : "Start or configure Ollama, then rerun doctor.",
     });
   } else if (options.ollamaModel && !ollama.models.includes(options.ollamaModel)) {
     issues.push({ severity: "error", component: "ollama", message: `Ollama model ${options.ollamaModel} is not installed.`, remediation: `Pull ${options.ollamaModel} only if that model is intentionally selected.` });

@@ -1,0 +1,18 @@
+export const standardToolNames = {
+  calculate: "calculate",
+  dateTime: "date-time",
+  validateJson: "validate-json",
+  listDirectory: "list-directory",
+  readText: "read-text",
+  searchText: "search-text",
+  writeText: "write-text",
+  applyTextEdits: "apply-text-edits",
+  gitStatus: "git-status",
+  gitDiff: "git-diff",
+  runCommand: "run-command",
+  httpFetch: "http-fetch",
+  browserSnapshot: "browser-snapshot",
+  browserNavigate: "browser-navigate",
+  browserClick: "browser-click",
+  browserType: "browser-type",
+} as const;

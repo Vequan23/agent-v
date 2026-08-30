@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+- Add a batteries-included `@vraxis/agent-v/providers` adapter for OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
+- Add provider profiles that compose with existing engine profiles, credential references, model selection, and run provenance without changing existing imports.
+- Add system-keyring, environment, composite, and in-memory credential infrastructure with no plaintext persistence fallback.
+- Make AI SDK 7 and Ollama runtime dependencies install-ready while keeping provider packages isolated from core.
+- Add opt-in standard tools for arithmetic, time, schema validation, bounded files, Git inspection, allowlisted commands, HTTP, and browser control.
+- Add categorized deny-by-default approval policies, skill permission metadata, operational skills, and coding, research, review, and document recipes.
+- Add `createAgentRuntime()` for provider or custom-engine composition without granting ambient filesystem, command, network, browser, credential, or destructive authority.
+
 ## 0.6.0
 
 - Add a provider-aware local Agent Skills inventory for Codex, Claude Code, Cursor, OpenCode, shared directories, and local plugin sources.

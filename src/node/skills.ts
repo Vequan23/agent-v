@@ -74,6 +74,14 @@ export async function loadSkillPackage(directory: string): Promise<LoadedSkillPa
   const parsedMetadata = metadata(frontmatter.metadata);
   const allowedToolsRaw = optionalString(frontmatter["allowed-tools"], "allowed-tools", 2048);
   const preapprovedTools = allowedToolsRaw?.match(/\S+/g) ?? [];
+  const requiredPermissionsRaw = typeof parsedMetadata?.["agent-v-required-permissions"] === "string"
+    ? parsedMetadata["agent-v-required-permissions"]
+    : undefined;
+  const requiredPermissions = requiredPermissionsRaw?.match(/\S+/g) ?? [];
+  const trustRaw = parsedMetadata?.["agent-v-trust"];
+  if (trustRaw !== undefined && !["bundled", "local", "external"].includes(String(trustRaw))) {
+    invalid("metadata.agent-v-trust must be bundled, local, or external.");
+  }
   const instructions = match[2]!.trim();
   if (!instructions) invalid("the Markdown instruction body must not be empty.");
 
@@ -88,6 +96,8 @@ export async function loadSkillPackage(directory: string): Promise<LoadedSkillPa
       instructions,
       tools: preapprovedTools,
       preapprovedTools,
+      requiredPermissions,
+      trust: (trustRaw as AgentSkill["trust"] | undefined) ?? "local",
       license,
       compatibility,
       metadata: parsedMetadata,

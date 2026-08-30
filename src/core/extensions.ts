@@ -9,6 +9,10 @@ export interface AgentSkill {
   description: string;
   instructions: string;
   tools: readonly string[];
+  /** Scope permissions that must be present before this skill may be used. */
+  requiredPermissions?: readonly string[];
+  /** Trust assigned by the host or loader; it never grants execution authority. */
+  trust?: "bundled" | "local" | "external";
   preapprovedTools?: readonly string[];
   license?: string;
   compatibility?: string;
@@ -101,6 +105,7 @@ export class ExtensionRegistry {
 export function defineSkill(skill: AgentSkill): AgentSkill {
   if (!skill.id.trim() || !skill.name.trim() || !skill.version.trim()) throw new Error("Skills require a stable id, name, and version.");
   if (new Set(skill.tools).size !== skill.tools.length) throw new Error(`Skill ${skill.id} declares duplicate tools.`);
+  if (new Set(skill.requiredPermissions ?? []).size !== (skill.requiredPermissions ?? []).length) throw new Error(`Skill ${skill.id} declares duplicate permissions.`);
   return Object.freeze({ ...skill });
 }
 

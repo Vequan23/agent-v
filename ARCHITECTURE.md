@@ -19,6 +19,14 @@ domain policy + UX          contracts + policy ports       AI SDK / local CLI / 
 
 The core imports no provider SDK and no Node-only module. Adapters translate framework behavior into normalized contracts and events. Products do not expose provider result objects to their domain layer.
 
+## Hosted provider boundary
+
+`@vraxis/agent-v/providers` is the batteries-included hosted-model adapter. It owns supported provider metadata, provider SDK construction, safe endpoint validation, model resolution, configuration-only readiness, and provider/model provenance. It composes with the existing `EngineProfile` fields: `model`, `credentialRef`, and `options`.
+
+Products own provider-profile records, user-facing setup, and the decision to transmit bounded context. Profiles persist opaque credential references only. The adapter resolves the referenced secret immediately before model construction and never adds it to configuration, events, provenance, inspection results, or errors.
+
+`@vraxis/agent-v/node` supplies environment and native operating-system credential implementations. Native storage has no plaintext fallback: an unavailable keyring is an explicit setup failure. The in-memory store is for tests and deliberately ephemeral applications.
+
 ## Engine contracts
 
 The engine types remain separate because they have different safety semantics:
@@ -62,11 +70,30 @@ Successful tool-agent results include a redacted `ToolExecutionAudit`: required 
 
 The shared repository should contain broadly reusable, well-tested tool contracts and adapters. Product-specific tools stay with the product until their semantics are genuinely shared. This avoids turning `agent-v` into an ungoverned catalog with ambient authority.
 
+### Standard tool boundary
+
+The standard catalog is split by host authority:
+
+- `@vraxis/agent-v/tools` contains pure tools, allowlisted HTTP, browser-controller contracts, and approval policy. It imports no Node module.
+- `@vraxis/agent-v/tools/node` contains canonical-root filesystem operations, read-only Git inspection, and argument-array command execution.
+
+Only arithmetic and date/time are registered automatically by the high-level runtime factory. Filesystem roots, command allowlists, network hosts, browser origins, and controllers must be supplied explicitly. Write, command, network, and browser tools require approval and carry a stable approval category. The standard policy denies missing category decisions.
+
+The standard approval policy retains only a redacted decision history containing ids, tool name, category, and decision. Tool input and metadata are passed to the host decision callback but are not copied into policy history.
+
+Filesystem containment checks both lexical and canonical paths and refuses symlink escape. Commands never use a shell, inherit only named environment variables, and constrain cwd to the canonical workspace. They still execute with the host user's OS authority and are not represented as a sandbox. HTTP accepts HTTPS or loopback HTTP, requires a host allowlist, rejects URL credentials, bounds the response while streaming, and does not follow redirects automatically. Browser tools require HTTPS or loopback origins and verify the current origin before reads or controls.
+
 ## Skills and agents
 
 - An **agent blueprint** selects exactly one engine or profile, instructions, skills, tools, required capabilities, and a step bound.
 - A **skill** is portable domain guidance plus a tool allowlist and optional evidence artifacts.
 - An **extension** packages tools, skills, and middleware but gains no authority merely by registration.
+
+Bundled operational skills and starter recipes are opt-in composition, not product prompts. Skill permission metadata is enforced before engine execution; skill trust is descriptive and cannot bypass tool permissions or approvals. Coding, research, review, and document recipes supply tool/skill sets and conservative step limits while requiring the product to supply instructions.
+
+## High-level runtime factory
+
+`@vraxis/agent-v/runtime` composes a provider profile or custom tool-agent engine, extensions, an agent blueprint, and a default approval policy. It is additive over the low-level registries and `AgentV` constructor. The default policy denies every guarded action, so convenience cannot become ambient authority.
 - **Middleware** handles cross-cutting policy, telemetry, redaction, and budget enforcement supplied by a host.
 
 When an agent selects skills, every requested tool must appear in their combined allowlist. A mismatch rejects preparation rather than silently reducing capability.

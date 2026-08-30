@@ -8,6 +8,8 @@ import { createRepositorySummaryRequest } from "./local-cli.ts";
 import { createStatefulRuntime } from "./sessions-and-events.ts";
 import { createResolvedModelEngine } from "./custom-model-resolver.ts";
 import { registerFilesystemSkill } from "./filesystem-skill.ts";
+import { createHostedProviderAgent } from "./providers.ts";
+import { createReviewRuntime } from "./runtime-kit.ts";
 
 const usage = {
   inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
@@ -34,3 +36,9 @@ assert.equal(createStatefulRuntime(basic.runtime.engines.require("primary-agent"
 assert.equal(createResolvedModelEngine(() => model).descriptor.id, "profiled-agent");
 assert.equal((await registerFilesystemSkill("skills/agent-v")).loaded.skill.id, "agent-v");
 assert.equal(new EngineRegistry().list().length, 0);
+const hosted = createHostedProviderAgent({ resolve: async () => crypto.randomUUID() });
+assert.equal(hosted.profile.options?.provider, "openai");
+assert.equal((await hosted.providers.inspect(hosted.profile)).availability, "ready");
+const review = await createReviewRuntime(process.cwd());
+assert.equal(review.agent.id, "project-reviewer");
+assert.equal(review.approvalPolicy.constructor.name, "StandardApprovalPolicy");

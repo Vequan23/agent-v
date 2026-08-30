@@ -16,6 +16,11 @@ Choose from required behavior, not provider preference:
 | --- | --- | --- |
 | One schema-bound model operation | `@vraxis/agent-v/ai-sdk` | `StructuredModelEngine` |
 | Bounded model/tool loop | `@vraxis/agent-v/ai-sdk` | `ToolAgentEngine` |
+| Built-in hosted model provider | `@vraxis/agent-v/providers` | AI SDK engines through `ProviderRuntime` |
+| High-level model/tool runtime | `@vraxis/agent-v/runtime` | `createAgentRuntime()` with provider or custom engine selection |
+| Portable standard tools | `@vraxis/agent-v/tools` | Pure tools, HTTP/browser contracts, approval policy |
+| Bounded Node host tools | `@vraxis/agent-v/tools/node` | Filesystem, Git, and allowlisted commands |
+| Operational starter recipes | `@vraxis/agent-v/skills` | Coding, research, review, and document composition |
 | Local or remote Ollama model | `@vraxis/agent-v/ollama` | AI SDK engines through `OllamaRuntime` |
 | Coding agent against a workspace | `@vraxis/agent-v/local-cli` | `CodingRuntimeEngine` |
 | Local persistence or diagnostics | `@vraxis/agent-v/node` | Store and doctor ports |
@@ -30,6 +35,8 @@ Validate the tool's returned value with `output`. Tool implementation bugs must 
 
 Keep product-specific tools with their product until their contract and safety semantics are demonstrably reusable.
 
+Standard tools grant no ambient authority. Node workspace tools require a canonical root; command tools require an allowlist; HTTP requires allowed hosts; browser tools require allowed origins and a host controller. Guarded tools carry an approval category, and the standard policy denies categories the host has not decided explicitly.
+
 ## Composing an agent
 
 Use `defineAgent()` with either `engineId` or `profileId`, never both. Profiles select deploy-time engine, model, credential reference, and provider options without changing the blueprint.
@@ -37,6 +44,8 @@ Use `defineAgent()` with either `engineId` or `profileId`, never both. Profiles 
 When skills are selected, their combined tool allowlist constrains the blueprint. A mismatch is an agent-definition error, not a reason to silently omit a tool.
 
 Declare only capabilities the workflow actually needs. Selection should fail if the engine cannot enforce one.
+
+Starter recipes provide operational tool/skill composition, not product meaning. The product must supply the agent id, name, instructions, scope, persistence, and approval UX.
 
 For governed evidence-first loops, declare `toolPolicy.requiredSequence` on the blueprint and use `afterRequired: "disable"` when final synthesis must not invoke more tools. Include `tool-sequencing` and `tool-audit` in `requiredCapabilities`. Vraxis validates tool availability and step budget before inference and returns redacted execution evidence in `result.toolAudit`.
 
@@ -47,6 +56,8 @@ Sessions and event queries are isolated by tenant, project, principal, and optio
 Every `RunProvenance` has an `adapterStrategy`. Local CLI and Ollama runs also include the detected runtime version when available. Store provenance with outcomes so upstream changes can be correlated with regressions.
 
 Configuration contains credential references. Resolve credential values inside the host's model resolver; never write values to config, events, sessions, examples, or fixtures.
+
+For built-in hosted providers, use `defineProviderProfile()` and `ProviderRuntime` instead of importing provider SDKs into a product. Use `SystemCredentialStore` or another host-owned `CredentialResolver`; persist only the `keychain://` or `env://` reference. Provider inspection is configuration-only and makes no inference request.
 
 ## Common mistakes
 

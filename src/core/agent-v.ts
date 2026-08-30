@@ -65,6 +65,12 @@ export class AgentV {
       }
     }
     const skills = (blueprint.skills ?? []).map((id) => this.extensions.skills.require(id));
+    const grantedPermissions = new Set(request.scope.permissions);
+    const missingSkillPermissions = [...new Set(skills.flatMap((skill) => skill.requiredPermissions ?? []))]
+      .filter((permission) => !grantedPermissions.has("*") && !grantedPermissions.has(permission));
+    if (missingSkillPermissions.length) {
+      throw new AgentVError("permission-denied", `Agent ${blueprint.id} selects skills requiring permissions: ${missingSkillPermissions.join(", ")}.`);
+    }
     const hasToolRestrictions = skills.length > 0;
     const allowedBySkills = new Set(skills.flatMap((skill) => skill.tools));
     const requestedTools = blueprint.tools;

@@ -17,12 +17,17 @@ Use current local dependency documentation and source when editing an adapter. I
 
 - `@vraxis/agent-v`: provider-neutral contracts, registries, policies, and composition.
 - `@vraxis/agent-v/ai-sdk`: AI SDK structured generation and tool agents.
+- `@vraxis/agent-v/providers`: hosted provider catalog, profile composition, model construction, and configuration-only readiness.
+- `@vraxis/agent-v/runtime`: high-level provider or engine composition with deny-by-default approvals.
+- `@vraxis/agent-v/tools`: pure, HTTP, browser-controller, and approval-policy tools with no ambient authority.
+- `@vraxis/agent-v/tools/node`: bounded filesystem, Git, and allowlisted command tools for trusted Node hosts.
+- `@vraxis/agent-v/skills`: opt-in operational skills and starter recipes; product instructions remain in products.
 - `@vraxis/agent-v/local-cli`: bounded Codex, OpenCode, Claude Code, and Cursor runtime integration.
 - `@vraxis/agent-v/ollama`: optional Ollama model runtime support.
-- `@vraxis/agent-v/node`: filesystem persistence, diagnostics, and Agent Skills loading.
+- `@vraxis/agent-v/node`: filesystem persistence, diagnostics, Agent Skills loading, and host-owned credential resolvers/stores.
 - `@vraxis/agent-v/testing`: deterministic fakes and approval policies.
 
-Do not import adapter or Node types into `src/core`. Optional provider dependencies must remain isolated behind their package subpath.
+Do not import adapter or Node types into `src/core`. Provider dependencies must remain isolated behind their package subpath.
 
 ## Non-negotiable invariants
 
@@ -35,6 +40,7 @@ Do not import adapter or Node types into `src/core`. Optional provider dependenc
 - Every run records an adapter strategy. Local executables and model runtimes record detected versions when available.
 - Credentials remain host-resolved values; config, events, and sessions store references only.
 - Product evidence policy, prompts, ranking, retrieval, billing, and UX stay outside this package.
+- Standard tools never infer filesystem roots, allowed commands, network hosts, browser origins, or approval decisions.
 
 ## Public API changes
 
@@ -59,3 +65,9 @@ npm run check
 This must typecheck source and tests, run behavioral tests, build declarations and JavaScript, compile and execute consumer examples, verify package imports and CLI help, and perform an npm package dry run.
 
 Live probes are evidence beyond unit tests. They may use credentials, local services, or paid models, so run them only when the task authorizes that external action. Never download an Ollama model or start a background service merely to make a test pass.
+
+## Vraxis ecosystem
+
+`agent-v` is the shared execution foundation for Vraxis products. Keep product-specific prompts, evidence rules, reading modes, proof policy, distribution policy, and writing workflows in their owning repositories.
+
+For changes that affect multiple Vraxis products, use the `vraxis-ecosystem` skill or consult `../vraxis-platform`. Test the exact candidate package against every affected consumer before calling a breaking or security-sensitive change ready.

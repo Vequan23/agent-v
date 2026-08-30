@@ -39,11 +39,13 @@ test("loads a standard Agent Skills package without executing bundled resources"
   const parent = await mkdtemp(join(tmpdir(), "agent-v-skills-"));
   const directory = join(parent, "close-reading");
   await mkdir(join(directory, "scripts"), { recursive: true });
-  await writeFile(join(directory, "SKILL.md"), `---\nname: close-reading\ndescription: Ground explanations in selected source material.\nlicense: MIT\nmetadata:\n  version: 1.2.0\nallowed-tools: search-source cite-source\n---\nUse anchors and distinguish source claims from interpretation.\n`);
+  await writeFile(join(directory, "SKILL.md"), `---\nname: close-reading\ndescription: Ground explanations in selected source material.\nlicense: MIT\nmetadata:\n  version: 1.2.0\n  agent-v-required-permissions: sources:read citations:write\n  agent-v-trust: local\nallowed-tools: search-source cite-source\n---\nUse anchors and distinguish source claims from interpretation.\n`);
   await writeFile(join(directory, "scripts", "prepare.mjs"), `throw new Error("must not execute during discovery");\n`);
   const loaded = await loadSkillPackage(directory);
   assert.equal(loaded.skill.id, "close-reading");
   assert.equal(loaded.skill.version, "1.2.0");
   assert.deepEqual(loaded.skill.tools, ["search-source", "cite-source"]);
+  assert.deepEqual(loaded.skill.requiredPermissions, ["sources:read", "citations:write"]);
+  assert.equal(loaded.skill.trust, "local");
   assert.equal(loaded.scripts.length, 1);
 });

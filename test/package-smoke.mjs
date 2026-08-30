@@ -4,7 +4,12 @@ import { AgentV, localExecutionScope, resolveToolExecutionPolicy } from "../dist
 import { AiSdkToolAgentEngine } from "../dist/adapters/ai-sdk/index.js";
 import { LocalCliRuntimeEngine } from "../dist/adapters/local-cli/index.js";
 import { OllamaRuntime } from "../dist/adapters/ollama/index.js";
-import { discoverAgentSkillInventory, JsonSessionStore, loadSkillPackage } from "../dist/node/index.js";
+import { ProviderRuntime, defineProviderProfile } from "../dist/adapters/providers/index.js";
+import { createAgentRuntime } from "../dist/runtime/index.js";
+import { builtInAgentRecipes } from "../dist/skills/index.js";
+import { createCalculatorTool, createStandardApprovalPolicy } from "../dist/tools/index.js";
+import { createFilesystemTools } from "../dist/tools/node/index.js";
+import { discoverAgentSkillInventory, JsonSessionStore, loadSkillPackage, SystemCredentialStore } from "../dist/node/index.js";
 import { FakeToolAgentEngine } from "../dist/testing/index.js";
 
 assert.equal(typeof AgentV, "function");
@@ -13,10 +18,31 @@ assert.equal(resolveToolExecutionPolicy({ afterRequired: "disable" }).afterRequi
 assert.equal(typeof AiSdkToolAgentEngine, "function");
 assert.equal(typeof LocalCliRuntimeEngine, "function");
 assert.equal(typeof OllamaRuntime, "function");
+assert.equal(typeof ProviderRuntime, "function");
+assert.equal(typeof defineProviderProfile, "function");
+assert.equal(typeof createAgentRuntime, "function");
+assert.equal(builtInAgentRecipes.coding.id, "coding");
+assert.equal(createCalculatorTool().name, "calculate");
+assert.equal(typeof createStandardApprovalPolicy, "function");
+assert.equal(typeof createFilesystemTools, "function");
 assert.equal(typeof JsonSessionStore, "function");
 assert.equal(typeof loadSkillPackage, "function");
 assert.equal(typeof discoverAgentSkillInventory, "function");
+assert.equal(typeof SystemCredentialStore, "function");
 assert.equal(typeof FakeToolAgentEngine, "function");
+
+const publicProviders = await import("@vraxis/agent-v/providers");
+const publicNode = await import("@vraxis/agent-v/node");
+const publicRuntime = await import("@vraxis/agent-v/runtime");
+const publicSkills = await import("@vraxis/agent-v/skills");
+const publicTools = await import("@vraxis/agent-v/tools");
+const publicNodeTools = await import("@vraxis/agent-v/tools/node");
+assert.equal(publicProviders.ProviderRuntime, ProviderRuntime);
+assert.equal(publicNode.SystemCredentialStore, SystemCredentialStore);
+assert.equal(publicRuntime.createAgentRuntime, createAgentRuntime);
+assert.equal(publicSkills.builtInAgentRecipes.coding.id, "coding");
+assert.equal(publicTools.createCalculatorTool().name, "calculate");
+assert.equal(publicNodeTools.createFilesystemTools, createFilesystemTools);
 
 const cli = spawnSync(process.execPath, ["dist/cli/index.js", "--help"], { encoding: "utf8" });
 assert.equal(cli.status, 0, cli.stderr);

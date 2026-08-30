@@ -5,6 +5,8 @@ import { defaultConfig, type AgentEvent, type AgentSession, type AgentVConfig, t
 export * from "./skills.js";
 export * from "./skill-inventory.js";
 export * from "./doctor.js";
+export * from "./credentials.js";
+export * from "../tools/node/index.js";
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });

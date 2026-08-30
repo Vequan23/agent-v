@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.6.0",
+  "packageVersion": "0.7.0",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
@@ -10,6 +10,37 @@
         "ai-sdk-v7-structured-model",
         "ai-sdk-v7-tool-agent"
       ]
+    },
+    "providers": {
+      "credentialPolicy": "host-resolved-references-only",
+      "inspectionPolicy": "configuration-only-no-network",
+      "providers": {
+        "openai": "ai-sdk-openai-v4",
+        "anthropic": "ai-sdk-anthropic-v4",
+        "google": "ai-sdk-google-v4",
+        "deepseek": "ai-sdk-deepseek-v3",
+        "openrouter": "ai-sdk-openai-compatible-v3",
+        "groq": "ai-sdk-openai-compatible-v3",
+        "openai-compatible": "ai-sdk-openai-compatible-v3"
+      }
+    },
+    "system-credentials": {
+      "strategy": "native-os-keyring-v1",
+      "platforms": ["darwin", "win32", "linux"],
+      "plaintextFallback": false
+    },
+    "standard-tools": {
+      "format": "agent-v-tool-catalog-v1",
+      "defaultAuthority": "pure-tools-only",
+      "approvalPolicy": "deny-by-default",
+      "nodeWorkspacePolicy": "canonical-root-no-symlink-escape",
+      "networkPolicy": "https-or-loopback-explicit-host-allowlist",
+      "browserPolicy": "host-controller-explicit-origin-allowlist"
+    },
+    "starter-recipes": {
+      "format": "agent-v-starter-recipes-v1",
+      "recipes": ["coding", "research", "review", "document"],
+      "productInstructionsRequired": true
     },
     "ollama": {
       "aiSdkOllamaRange": ">=4.2.0 <5",
