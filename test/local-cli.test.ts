@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defineOutput, localExecutionScope } from "../src/core/index.ts";
-import { LocalCliRuntimeEngine, builtInRuntimes, parseRuntimeOutput } from "../src/adapters/local-cli/index.ts";
+import { LocalCliRuntimeEngine, builtInRuntimes, classifyProcessFailure, parseRuntimeOutput } from "../src/adapters/local-cli/index.ts";
 
 test("Codex invocation is bounded by an explicit sandbox and schema", () => {
   const codex = builtInRuntimes.find((runtime) => runtime.id === "codex");
@@ -14,6 +14,24 @@ test("Codex invocation is bounded by an explicit sandbox and schema", () => {
 test("normalizes JSONL runtime output", () => {
   const output = parseRuntimeOutput("opencode", '{"type":"text","text":"{\\"answer\\":42}"}\n');
   assert.deepEqual(output.value, { answer: 42 });
+});
+
+test("does not infer authentication failure from an echoed reading prompt", () => {
+  const failure = Object.assign(new Error("Command failed: codex exec Explain the author's authentication section"), {
+    code: 1,
+    stdout: '{"type":"item.completed","item":{"type":"agent_message","text":"The author discusses authentication."}}\n',
+    stderr: "The runtime process exited unexpectedly.",
+  });
+  assert.equal(classifyProcessFailure(failure).code, "invocation-failed");
+});
+
+test("recognizes authentication failure from runtime error output", () => {
+  const failure = Object.assign(new Error("Command failed: codex exec"), {
+    code: 1,
+    stdout: '{"type":"turn.failed","error":{"message":"OAuth access token expired"}}\n',
+    stderr: "",
+  });
+  assert.equal(classifyProcessFailure(failure).code, "authentication-required");
 });
 
 for (const runtimeId of ["opencode", "claude-code"] as const) {

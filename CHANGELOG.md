@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- Classify local CLI authentication failures only from stderr and structured failure events, so echoed prompts and successful model output cannot create false authentication errors.
+
 ## 0.7.0
 
 - Add a batteries-included `@vraxis/agent-v/providers` adapter for OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, and custom OpenAI-compatible endpoints.

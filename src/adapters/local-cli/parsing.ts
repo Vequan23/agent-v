@@ -1,14 +1,35 @@
 import { AgentVError } from "../../core/index.js";
 
+function structuredRuntimeErrorText(stdout: string): string {
+  const messages: string[] = [];
+  for (const line of stdout.split("\n").filter(Boolean)) {
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      const type = typeof event.type === "string" ? event.type.toLowerCase() : "";
+      if (!/(?:error|fail)/.test(type) && event.error === undefined) continue;
+      if (typeof event.message === "string") messages.push(event.message);
+      if (typeof event.error === "string") messages.push(event.error);
+      if (event.error && typeof event.error === "object") {
+        const message = (event.error as Record<string, unknown>).message;
+        if (typeof message === "string") messages.push(message);
+      }
+    } catch {
+      // Successful transport output and echoed prompts are not failure evidence.
+    }
+  }
+  return messages.join("\n");
+}
+
 export function classifyProcessFailure(error: unknown): AgentVError {
   if (error instanceof AgentVError) return error;
   if (error instanceof Error && error.name === "AbortError") return new AgentVError("cancelled", "The runtime request was cancelled.", { retryable: true, cause: error });
   const record = error as { message?: string; stdout?: string; stderr?: string; code?: string | number; killed?: boolean; signal?: string };
-  const diagnostic = `${record.message ?? ""}\n${record.stdout ?? ""}\n${record.stderr ?? ""}`.toLowerCase();
-  if (record.killed || record.signal === "SIGTERM" || /timed out|timeout/.test(diagnostic)) {
+  const processDiagnostic = `${record.message ?? ""}\n${record.stderr ?? ""}`.toLowerCase();
+  if (record.killed || record.signal === "SIGTERM" || /timed out|timeout/.test(processDiagnostic)) {
     return new AgentVError("timeout", "The runtime did not complete within the configured time limit.", { retryable: true, cause: error });
   }
-  if (/auth|login|log in|unauthori[sz]ed|credential|api key|access token|bearer token/.test(diagnostic)) {
+  const authenticationDiagnostic = `${record.stderr ?? ""}\n${structuredRuntimeErrorText(record.stdout ?? "")}`.toLowerCase();
+  if (/\b(?:auth|authentication|authorization|oauth|login|log in|unauthori[sz]ed|credentials?|api[- ]?key|access token|bearer token)\b/.test(authenticationDiagnostic)) {
     return new AgentVError("authentication-required", "The runtime rejected the request because its authentication is not ready.", { cause: error });
   }
   if (record.code === "ENOENT") return new AgentVError("engine-unavailable", "The runtime executable is missing or is not on PATH.", { cause: error });
