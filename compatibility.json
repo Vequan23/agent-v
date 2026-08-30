@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.7.1",
+  "packageVersion": "0.8.0",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
@@ -19,6 +19,7 @@
         "anthropic": "ai-sdk-anthropic-v4",
         "google": "ai-sdk-google-v4",
         "deepseek": "ai-sdk-deepseek-v3",
+        "zai": "ai-sdk-openai-compatible-v3",
         "openrouter": "ai-sdk-openai-compatible-v3",
         "groq": "ai-sdk-openai-compatible-v3",
         "openai-compatible": "ai-sdk-openai-compatible-v3"
@@ -64,8 +65,8 @@
           "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "artifacts"]
         },
         "cursor": {
-          "strategy": "cursor-print-json-v1",
-          "capabilities": ["local-workspace", "workspace-write", "artifacts"]
+          "strategy": "cursor-print-json-v2",
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"]
         }
       }
     },

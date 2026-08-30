@@ -21,7 +21,7 @@ The core imports no provider SDK and no Node-only module. Adapters translate fra
 
 ## Hosted provider boundary
 
-`@vraxis/agent-v/providers` is the batteries-included hosted-model adapter. It owns supported provider metadata, provider SDK construction, safe endpoint validation, model resolution, configuration-only readiness, and provider/model provenance. It composes with the existing `EngineProfile` fields: `model`, `credentialRef`, and `options`.
+`@vraxis/agent-v/providers` is the batteries-included hosted-model adapter. It owns supported provider metadata, provider SDK construction, safe endpoint validation, model resolution, explicit model-catalog discovery, configuration-only readiness, and provider/model provenance. It composes with the existing `EngineProfile` fields: `model`, `credentialRef`, and `options`. Catalog discovery is always an explicit network operation and reports only capabilities declared by the upstream catalog.
 
 Products own provider-profile records, user-facing setup, and the decision to transmit bounded context. Profiles persist opaque credential references only. The adapter resolves the referenced secret immediately before model construction and never adds it to configuration, events, provenance, inspection results, or errors.
 

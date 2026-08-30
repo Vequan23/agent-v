@@ -6,9 +6,9 @@ It is an engine, not a chatbot framework and not a repository of every product-s
 
 ## What works in 0.7
 
-- Batteries-included hosted provider resolution for OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
+- Batteries-included hosted provider resolution for OpenAI, Anthropic, Google Gemini, DeepSeek, Z.AI, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
-- Codex CLI, OpenCode, and Claude Code runtime adapters with honest access-mode capabilities and bounded schema output. Cursor is discoverable but rejected for structured execution until its adapter can guarantee the contract.
+- Codex CLI, Claude Code, and Cursor Agent runtime adapters with honest access-mode capabilities and bounded schema output. Cursor uses its read-only Ask mode for reading runs. OpenCode remains workspace-write only.
 - Local Ollama models through an optional AI SDK 7-compatible adapter with daemon and installed-model readiness checks.
 - Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
 - Opt-in standard tools for arithmetic, time, schema validation, bounded workspaces, Git, allowlisted commands, HTTP, and host-controlled browsers.
@@ -228,7 +228,7 @@ const engines = new EngineRegistry().register(providers.agent).register(provider
 const runtime = new AgentV({ engines });
 ```
 
-Persist `profile`, not `apiKeyFromYourSettingsForm`. `ProviderRuntime.inspect(profile)` checks configuration and credential availability without contacting the provider. The same profile supports OpenAI, Anthropic, Google Gemini, DeepSeek, OpenRouter, Groq, or a custom OpenAI-compatible HTTPS/loopback endpoint. Product prompts, UI, profile ownership, and the decision to send data remotely remain with the host.
+Persist `profile`, not `apiKeyFromYourSettingsForm`. `ProviderRuntime.inspect(profile)` checks configuration and credential availability without contacting the provider. `ProviderRuntime.listModels(profile)` explicitly contacts the selected provider and returns a normalized model catalog with only capabilities the upstream catalog declares. The same profile supports OpenAI, Anthropic, Google Gemini, DeepSeek, Z.AI, OpenRouter, Groq, or a custom OpenAI-compatible HTTPS/loopback endpoint. Product prompts, UI, profile ownership, and the decision to send data remotely remain with the host.
 
 ## Ollama
 

@@ -11,6 +11,15 @@ test("Codex invocation is bounded by an explicit sandbox and schema", () => {
   assert.ok(args.includes("--output-schema"));
 });
 
+test("Cursor uses Ask mode for read-only execution", () => {
+  const cursor = builtInRuntimes.find((runtime) => runtime.id === "cursor");
+  assert.ok(cursor);
+  const args = cursor.buildInvocation({ prompt: "return json", workspace: "/tmp/work", outputFile: "/tmp/out", outputSchemaFile: "/tmp/schema", workspaceAccess: "read-only" });
+  assert.deepEqual(args.slice(0, 5), ["-p", "--mode", "ask", "--output-format", "json"]);
+  assert.ok(cursor.capabilities.includes("read-only-workspace"));
+  assert.ok(cursor.capabilities.includes("structured-output"));
+});
+
 test("normalizes JSONL runtime output", () => {
   const output = parseRuntimeOutput("opencode", '{"type":"text","text":"{\\"answer\\":42}"}\n');
   assert.deepEqual(output.value, { answer: 42 });
@@ -34,7 +43,7 @@ test("recognizes authentication failure from runtime error output", () => {
   assert.equal(classifyProcessFailure(failure).code, "authentication-required");
 });
 
-for (const runtimeId of ["opencode", "claude-code"] as const) {
+for (const runtimeId of ["opencode", "claude-code", "cursor"] as const) {
   test(`${runtimeId} receives the actual JSON Schema in its prompt`, async () => {
     let receivedPrompt = "";
     const runner = async (_command: string, args: readonly string[]) => {
@@ -43,7 +52,9 @@ for (const runtimeId of ["opencode", "claude-code"] as const) {
       const value = '{"answer":42}';
       return runtimeId === "claude-code"
         ? { stdout: JSON.stringify({ type: "result", result: value }), stderr: "" }
-        : { stdout: `${JSON.stringify({ type: "text", text: value })}\n`, stderr: "" };
+        : runtimeId === "cursor"
+          ? { stdout: JSON.stringify({ type: "result", result: value }), stderr: "" }
+          : { stdout: `${JSON.stringify({ type: "text", text: value })}\n`, stderr: "" };
     };
     const engine = new LocalCliRuntimeEngine({ runner });
     const output = defineOutput({
@@ -54,7 +65,7 @@ for (const runtimeId of ["opencode", "claude-code"] as const) {
         return { answer: 42 };
       },
     });
-    const result = await engine.run({ runtimeId, workspaceAccess: runtimeId === "claude-code" ? "read-only" : "workspace-write", scope: localExecutionScope("schema-prompt"), input: { prompt: "Return the answer." }, output });
+    const result = await engine.run({ runtimeId, workspaceAccess: runtimeId === "opencode" ? "workspace-write" : "read-only", scope: localExecutionScope("schema-prompt"), input: { prompt: "Return the answer." }, output });
     assert.deepEqual(result.output, { answer: 42 });
     assert.match(receivedPrompt, /Required output contract "answer-contract"/);
     assert.match(receivedPrompt, /"answer"/);

@@ -82,12 +82,20 @@ export const builtInRuntimes: readonly LocalRuntimeDefinition[] = [
   {
     id: "cursor",
     name: "Cursor Agent",
-    strategyId: "cursor-print-json-v1",
+    strategyId: "cursor-print-json-v2",
     command: "cursor-agent",
     versionArgs: ["--version"],
-    capabilities: ["local-workspace", "workspace-write", "artifacts"],
+    capabilities: ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"],
     buildInvocation(input) {
-      return ["-p", "--output-format", "json", ...(input.model ? ["--model", input.model] : []), input.prompt];
+      return [
+        "-p",
+        "--mode",
+        input.workspaceAccess === "read-only" ? "ask" : "agent",
+        "--output-format",
+        "json",
+        ...(input.model ? ["--model", input.model] : []),
+        input.prompt,
+      ];
     },
   },
 ];

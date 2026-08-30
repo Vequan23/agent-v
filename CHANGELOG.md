@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+
+- Add schema-valid Cursor Agent execution with its documented read-only Ask mode for reading and review products.
+- Add explicit provider model-catalog discovery with normalized, upstream-declared capabilities.
+- Add Z.AI as a built-in provider and update the default DeepSeek model.
+
 ## 0.7.1
 
 - Classify local CLI authentication failures only from stderr and structured failure events, so echoed prompts and successful model output cannot create false authentication errors.

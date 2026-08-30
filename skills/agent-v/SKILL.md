@@ -2,7 +2,7 @@
 name: agent-v
 description: Integrate or extend the agent-v TypeScript library for scoped agents, tools, approvals, AI SDK models, local coding runtimes, Ollama, sessions, events, or Agent Skills.
 metadata:
-  version: "0.7.1"
+  version: "0.8.0"
 ---
 
 # Use agent-v accurately

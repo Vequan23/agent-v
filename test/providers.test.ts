@@ -29,6 +29,80 @@ test("provider profiles use built-in defaults without storing credential values"
   assert.doesNotMatch(JSON.stringify({ profile, readiness }), new RegExp(credentialValue));
 });
 
+test("uses current DeepSeek defaults and a built-in Z.AI profile", () => {
+  assert.equal(defineProviderProfile({ id: "deepseek", name: "DeepSeek", provider: "deepseek" }).model, "deepseek-v4-flash");
+  const zai = defineProviderProfile({ id: "zai", name: "Z.AI", provider: "zai" });
+  assert.equal(zai.model, "glm-4.7-flash");
+  assert.deepEqual(zai.options, { provider: "zai", baseURL: "https://api.z.ai/api/paas/v4" });
+});
+
+test("discovers and normalizes OpenRouter model capabilities without exposing credentials", async () => {
+  const credentialReference = "memory://providers/openrouter";
+  const credentialValue = crypto.randomUUID();
+  const credentials = new MemoryCredentialStore({ [credentialReference]: credentialValue });
+  let authorization = "";
+  const runtime = new ProviderRuntime({
+    credentials,
+    fetch: async (_input, init) => {
+      authorization = new Headers(init?.headers).get("authorization") ?? "";
+      return Response.json({ data: [{
+        id: "z-ai/glm-4.7-flash",
+        name: "GLM 4.7 Flash",
+        description: "Fast coding model.",
+        context_length: 202752,
+        architecture: { input_modalities: ["text", "image"] },
+        supported_parameters: ["tools", "structured_outputs", "reasoning"],
+      }] });
+    },
+  });
+  const catalog = await runtime.listModels(defineProviderProfile({
+    id: "openrouter",
+    name: "OpenRouter",
+    provider: "openrouter",
+    credentialRef: credentialReference,
+  }));
+  assert.equal(authorization, `Bearer ${credentialValue}`);
+  assert.deepEqual(catalog.models[0], {
+    id: "z-ai/glm-4.7-flash",
+    name: "GLM 4.7 Flash",
+    provider: "openrouter",
+    capabilities: ["text", "vision", "tools", "structured-output", "reasoning"],
+    contextWindow: 202752,
+    description: "Fast coding model.",
+  });
+  assert.doesNotMatch(JSON.stringify(catalog), new RegExp(credentialValue));
+});
+
+test("discovers Google generation models and ignores embedding-only entries", async () => {
+  const credentials = new MemoryCredentialStore({ "memory://google": "secret" });
+  const runtime = new ProviderRuntime({
+    credentials,
+    fetch: async (_input, init) => {
+      assert.equal(new Headers(init?.headers).get("x-goog-api-key"), "secret");
+      return Response.json({ models: [
+        { name: "models/gemini-flash", displayName: "Gemini Flash", inputTokenLimit: 1000, outputTokenLimit: 200, supportedGenerationMethods: ["generateContent"], thinking: true },
+        { name: "models/text-embedding", supportedGenerationMethods: ["embedContent"] },
+      ] });
+    },
+  });
+  const catalog = await runtime.listModels(defineProviderProfile({ id: "google", name: "Google", provider: "google", credentialRef: "memory://google" }));
+  assert.deepEqual(catalog.models.map((model) => model.id), ["gemini-flash"]);
+  assert.deepEqual(catalog.models[0]?.capabilities, ["text", "reasoning"]);
+  assert.equal(catalog.models[0]?.contextWindow, 1000);
+  assert.equal(catalog.models[0]?.maxOutputTokens, 200);
+});
+
+test("model discovery fails closed with a safe authentication error", async () => {
+  const runtime = new ProviderRuntime({
+    credentials: new MemoryCredentialStore({ "memory://deepseek": "secret-value" }),
+    fetch: async () => new Response("sensitive upstream response", { status: 401 }),
+  });
+  await assert.rejects(
+    runtime.listModels(defineProviderProfile({ id: "deepseek", name: "DeepSeek", provider: "deepseek", credentialRef: "memory://deepseek" })),
+    (error: unknown) => error instanceof AgentVError && error.code === "authentication-required" && !error.message.includes("sensitive"),
+  );
+});
+
 test("built-in provider resolver constructs every advertised model without a network call", async () => {
   const credentialReference = "memory://providers/default";
   const credentials = new MemoryCredentialStore({ [credentialReference]: crypto.randomUUID() });
