@@ -35,6 +35,29 @@ test("built-in hosts include Cursor app fallback and distinguish Claude Desktop"
   assert.ok(cursor?.applicationPaths?.includes("/Applications/Cursor.app"));
   assert.ok(claude?.applicationPaths?.includes("/Applications/Claude.app"));
   assert.ok(claude?.commandCandidates?.some((item) => item.command === "/Users/example/.local/bin/claude"));
+  assert.deepEqual(cursor?.maintenance?.authenticateArgs, ["login"]);
+  assert.deepEqual(claude?.maintenance?.authenticateArgs, ["auth", "login"]);
+});
+
+test("inventory exposes declarative maintenance actions without executing them", async () => {
+  const installed = await new LocalCliRuntimeDiscovery({
+    runtimes: [runtime({ maintenance: { documentationUrl: "https://example.test/install", authenticateArgs: ["login"], updateArgs: ["update"] } })],
+    runner: async (_command, args) => args.includes("--version")
+      ? { stdout: "Cursor Agent 1.0", stderr: "" }
+      : { stdout: "Authenticated", stderr: "" },
+    cwd: "/tmp",
+  }).inspect("cursor");
+  assert.deepEqual(installed.maintenanceActions.map((item) => item.id), ["authenticate", "update"]);
+  assert.equal(installed.maintenanceActions[0]?.executable, "cursor-agent");
+  assert.deepEqual(installed.maintenanceActions[0]?.args, ["login"]);
+
+  const missing = await new LocalCliRuntimeDiscovery({
+    runtimes: [runtime({ maintenance: { documentationUrl: "https://example.test/install" } })],
+    runner: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); },
+    cwd: "/tmp",
+  }).inspect("cursor");
+  assert.equal(missing.maintenanceActions[0]?.kind, "documentation");
+  assert.equal(missing.maintenanceActions[0]?.url, "https://example.test/install");
 });
 
 test("resolver rejects an unrelated agent command and selects an app-bundled harness", async () => {

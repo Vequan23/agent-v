@@ -5,16 +5,18 @@ export interface BrowserController {
   currentUrl(options?: { abortSignal?: AbortSignal }): Promise<string>;
   snapshot(options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
   consoleMessages?(options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
+  networkRequests?(options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
   screenshot?(options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
   wait?(target: string, options?: { abortSignal?: AbortSignal; timeoutMs?: number }): Promise<JsonObject>;
-  navigate(url: string, options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
-  click(target: string, options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
-  type(target: string, text: string, options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
+  navigate(url: string, options?: { abortSignal?: AbortSignal; approvalId?: string }): Promise<JsonObject>;
+  click(target: string, options?: { abortSignal?: AbortSignal; approvalId?: string }): Promise<JsonObject>;
+  type(target: string, text: string, options?: { abortSignal?: AbortSignal; approvalId?: string }): Promise<JsonObject>;
 }
 
 export interface BrowserToolOptions {
   controller: BrowserController;
   allowedOrigins: readonly string[];
+  allowNavigationRequests?: boolean;
   timeoutMs?: number;
 }
 
@@ -37,7 +39,7 @@ function stringInput(value: unknown, field: string): string {
 
 export function createBrowserTools(options: BrowserToolOptions): readonly AgentTool[] {
   const allowed = new Set(options.allowedOrigins.map(origin));
-  if (!allowed.size) throw new TypeError("Browser tools require at least one allowed origin.");
+  if (!allowed.size && !options.allowNavigationRequests) throw new TypeError("Browser tools require at least one allowed origin or explicit navigation requests.");
   const timeoutMs = options.timeoutMs ?? 15_000;
   const verifyCurrentOrigin = async (signal?: AbortSignal) => {
     const current = await options.controller.currentUrl({ abortSignal: signal });
@@ -94,6 +96,22 @@ export function createBrowserTools(options: BrowserToolOptions): readonly AgentT
         return options.controller.consoleMessages!({ abortSignal: context.abortSignal });
       },
     })] : []),
+    ...(options.controller.networkRequests ? [defineTool({
+      name: standardToolNames.browserNetwork,
+      version: "1.0.0",
+      description: "Read bounded, credential-redacted browser network evidence from the current allowed origin.",
+      input: defineOutput({ name: "browser-network-input", jsonSchema: { type: "object", additionalProperties: false }, parse: () => ({}) }),
+      output: objectOutput,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["browser:read"],
+      requiresApproval: false,
+      timeoutMs,
+      async execute(_, context) {
+        await verifyCurrentOrigin(context.abortSignal);
+        return options.controller.networkRequests!({ abortSignal: context.abortSignal });
+      },
+    })] : []),
     ...(options.controller.screenshot ? [defineTool({
       name: standardToolNames.browserScreenshot,
       version: "1.0.0",
@@ -141,11 +159,12 @@ export function createBrowserTools(options: BrowserToolOptions): readonly AgentT
       description: "Navigate the controlled browser to an allowed origin.",
       input: defineOutput({ name: "browser-navigate-input", jsonSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false }, parse(value) {
         const url = stringInput(value, "url");
-        if (!allowed.has(origin(url))) throw new TypeError(`Browser origin ${origin(url)} is not allowed.`);
+        const requestedOrigin = origin(url);
+        if (!options.allowNavigationRequests && !allowed.has(requestedOrigin)) throw new TypeError(`Browser origin ${requestedOrigin} is not allowed.`);
         return { url };
       } }),
       output: objectOutput,
-      async execute({ url }, context) { return options.controller.navigate(url, { abortSignal: context.abortSignal }); },
+      async execute({ url }, context) { return options.controller.navigate(url, { abortSignal: context.abortSignal, approvalId: context.approvalId }); },
     }),
     guarded({
       name: standardToolNames.browserClick,
@@ -155,7 +174,7 @@ export function createBrowserTools(options: BrowserToolOptions): readonly AgentT
       output: objectOutput,
       async execute({ target }, context) {
         await verifyCurrentOrigin(context.abortSignal);
-        return options.controller.click(target, { abortSignal: context.abortSignal });
+        return options.controller.click(target, { abortSignal: context.abortSignal, approvalId: context.approvalId });
       },
     }),
     guarded({
@@ -171,7 +190,7 @@ export function createBrowserTools(options: BrowserToolOptions): readonly AgentT
       output: objectOutput,
       async execute({ target, text }, context) {
         await verifyCurrentOrigin(context.abortSignal);
-        return options.controller.type(target, text, { abortSignal: context.abortSignal });
+        return options.controller.type(target, text, { abortSignal: context.abortSignal, approvalId: context.approvalId });
       },
     }),
   ];

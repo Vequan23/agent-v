@@ -9,6 +9,8 @@ export interface RuntimeProcessOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /** Per-run environment additions. Never mutate the parent process environment. */
+  environment?: Readonly<Record<string, string | undefined>>;
 }
 
 export type RuntimeProcessRunner = (
@@ -21,6 +23,7 @@ export type RuntimeProcessRunner = (
 export const runRuntimeProcess: RuntimeProcessRunner = (command, args, cwd, options = {}) => new Promise((resolve, reject) => {
   const child = execFile(command, [...args], {
     cwd,
+    env: options.environment ? { ...process.env, ...options.environment } : process.env,
     signal: options.signal,
     timeout: options.timeoutMs ?? 75_000,
     maxBuffer: options.maxOutputBytes ?? 8 * 1024 * 1024,

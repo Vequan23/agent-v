@@ -32,6 +32,17 @@ export interface LocalRuntimeUpdate {
   checkedAt?: string;
 }
 
+export interface LocalRuntimeMaintenanceAction {
+  id: "install" | "authenticate" | "update";
+  label: string;
+  detail: string;
+  kind: "command" | "documentation";
+  executable?: string;
+  args?: readonly string[];
+  url?: string;
+  requiresNetwork: boolean;
+}
+
 export interface LocalRuntimeInventoryItem {
   id: string;
   name: string;
@@ -43,6 +54,7 @@ export interface LocalRuntimeInventoryItem {
   models: readonly LocalRuntimeModel[];
   modelDiscovery: LocalRuntimeModelDiscovery;
   update: LocalRuntimeUpdate;
+  maintenanceActions: readonly LocalRuntimeMaintenanceAction[];
   checkedAt: string;
 }
 
@@ -81,6 +93,37 @@ interface CodexModelResponse {
 }
 
 const ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+function maintenanceActions(
+  runtime: LocalRuntimeDefinition,
+  command?: ResolvedLocalRuntimeCommand,
+): LocalRuntimeMaintenanceAction[] {
+  const maintenance = runtime.maintenance;
+  if (!maintenance) return [];
+  if (!command) {
+    return [{
+      id: "install",
+      label: `Install ${runtime.name}`,
+      detail: "Open the harness's official installation instructions.",
+      kind: "documentation",
+      url: maintenance.documentationUrl,
+      requiresNetwork: true,
+    }];
+  }
+  const action = (id: "authenticate" | "update", label: string, detail: string, args: readonly string[]): LocalRuntimeMaintenanceAction => ({
+    id,
+    label,
+    detail,
+    kind: "command",
+    executable: command.command,
+    args: [...command.argsPrefix, ...args],
+    requiresNetwork: true,
+  });
+  return [
+    ...(maintenance.authenticateArgs ? [action("authenticate", `Sign in to ${runtime.name}`, "Prepare the harness's interactive sign-in command.", maintenance.authenticateArgs)] : []),
+    ...(maintenance.updateArgs ? [action("update", `Update ${runtime.name}`, "Prepare the harness's official update command.", maintenance.updateArgs)] : []),
+  ];
+}
 
 function clean(value: string): string {
   return value.replace(ansiPattern, "").trim();
@@ -260,6 +303,7 @@ export class LocalCliRuntimeDiscovery {
         models: [],
         modelDiscovery: "unavailable",
         update: { status: "unknown", detail: "Install the coding harness before checking for updates." },
+        maintenanceActions: maintenanceActions(runtime),
         checkedAt,
       };
     }
@@ -272,10 +316,10 @@ export class LocalCliRuntimeDiscovery {
       detail: `${runtime.name} is installed but has not passed a bounded readiness probe for this version.`,
     };
     const details = await this.details(runtime.id, command);
-    return { id: runtime.id, name: runtime.name, readiness, command, ...(application ? { application } : {}), ...details, checkedAt };
+    return { id: runtime.id, name: runtime.name, readiness, command, ...(application ? { application } : {}), ...details, maintenanceActions: maintenanceActions(runtime, command), checkedAt };
   }
 
-  private async details(runtimeId: string, command: ResolvedLocalRuntimeCommand): Promise<Omit<LocalRuntimeInventoryItem, "id" | "name" | "readiness" | "command" | "application" | "checkedAt">> {
+  private async details(runtimeId: string, command: ResolvedLocalRuntimeCommand): Promise<Omit<LocalRuntimeInventoryItem, "id" | "name" | "readiness" | "command" | "application" | "maintenanceActions" | "checkedAt">> {
     if (runtimeId === "codex") {
       const [doctor, models] = await Promise.all([
         capture(this.runner, command, ["doctor", "--json"], this.cwd, this.timeoutMs),

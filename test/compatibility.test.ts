@@ -34,7 +34,7 @@ test("compatibility metadata matches the executable adapter definitions", async 
     manifest.adapters.providers.providers,
     Object.fromEntries(builtInModelProviders.map((provider) => [provider.id, provider.adapterStrategy])),
   );
-  assert.equal(manifest.adapters["standard-tools"].approvalPolicy, "deny-by-default");
+  assert.equal(manifest.adapters["standard-tools"].approvalPolicy, "deny-by-default-or-scoped-deny-ask-allow");
   assert.deepEqual(manifest.adapters["standard-tools"].tools, Object.values(standardToolNames));
   assert.deepEqual(manifest.adapters["starter-recipes"].recipes, Object.keys(builtInAgentRecipes));
   for (const runtime of builtInRuntimes) {

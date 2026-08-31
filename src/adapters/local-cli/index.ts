@@ -5,3 +5,5 @@ export * from "./parsing.js";
 export * from "./process.js";
 export * from "./resolution.js";
 export * from "./store.js";
+export * from "./mcp-bridge.js";
+export * from "./acp.js";

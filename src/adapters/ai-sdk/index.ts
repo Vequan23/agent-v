@@ -257,6 +257,7 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
       state.calls.push(audit);
       await emit(sink, { ...eventBase(request, runId), type: "tool.requested", toolCallId, toolName: definition.name, input: rawInput as JsonValue });
       const started = Date.now();
+      let approvalId: string | undefined;
       try {
         const requiredPermissions = definition.requiredPermissions;
         const grantedPermissions = new Set(request.scope.permissions);
@@ -266,10 +267,10 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
         }
         if (definition.requiresApproval) {
           if (!request.approvalPolicy) throw new AgentVError("permission-denied", `Tool ${definition.name} requires an approval policy.`);
-          const approvalId = crypto.randomUUID();
+          approvalId = crypto.randomUUID();
           const reason = definition.approvalReason ?? `${definition.name} requires explicit approval before execution.`;
           await emit(sink, { ...eventBase(request, runId), type: "approval.requested", approvalId, toolName: definition.name, reason });
-          const decision = await request.approvalPolicy.decide({
+          const decisionRequest = {
             id: approvalId,
             runId,
             toolName: definition.name,
@@ -282,7 +283,29 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
             requiredPermissions,
             scope: request.scope,
             metadata: request.metadata,
-          });
+          } as const;
+          const decisionPromise = request.approvalPolicy.decide(decisionRequest);
+          const approvalAbortSignal = request.abortSignal ?? options.abortSignal;
+          let decision: "approved" | "denied";
+          if (approvalAbortSignal) {
+            if (approvalAbortSignal.aborted) {
+              await request.approvalPolicy.cancel?.(approvalId, "The run was cancelled before a decision was made.");
+              throw new AgentVError("cancelled", `Tool ${definition.name} was cancelled while awaiting approval.`);
+            }
+            let onAbort: () => void = () => undefined;
+            const aborted = new Promise<never>((_, reject) => {
+              onAbort = () => reject(new AgentVError("cancelled", `Tool ${definition.name} was cancelled while awaiting approval.`));
+              approvalAbortSignal.addEventListener("abort", onAbort, { once: true });
+            });
+            try {
+              decision = await Promise.race([decisionPromise, aborted]);
+            } catch (error) {
+              if (approvalAbortSignal.aborted) await request.approvalPolicy.cancel?.(approvalId, "The run was cancelled before a decision was made.");
+              throw error;
+            } finally {
+              approvalAbortSignal.removeEventListener("abort", onAbort);
+            }
+          } else decision = await decisionPromise;
           await emit(sink, { ...eventBase(request, runId), type: "approval.resolved", approvalId, decision });
           audit.approval = decision;
           if (decision !== "approved") throw new AgentVError("permission-denied", `Tool ${definition.name} was denied.`);
@@ -298,6 +321,7 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
           metadata: request.metadata,
           scope: request.scope,
           toolCallId,
+          approvalId,
           artifacts: request.input.artifacts ?? [],
         }));
         let rawOutput: unknown;

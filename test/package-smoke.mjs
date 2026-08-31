@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { AgentV, localExecutionScope, resolveToolExecutionPolicy } from "../dist/core/index.js";
 import { AiSdkToolAgentEngine } from "../dist/adapters/ai-sdk/index.js";
-import { LocalCliRuntimeDiscovery, LocalCliRuntimeEngine } from "../dist/adapters/local-cli/index.js";
+import { LocalCliRuntimeDiscovery, LocalCliRuntimeEngine, startLocalMcpBridge } from "../dist/adapters/local-cli/index.js";
 import { OllamaRuntime } from "../dist/adapters/ollama/index.js";
 import { ProviderRuntime, defineProviderProfile } from "../dist/adapters/providers/index.js";
 import { createAgentRuntime } from "../dist/runtime/index.js";
 import { builtInAgentRecipes, builtInAgentSkills } from "../dist/skills/index.js";
 import { createCalculatorTool, createStandardApprovalPolicy, standardToolNames } from "../dist/tools/index.js";
 import { createFilesystemTools } from "../dist/tools/node/index.js";
-import { discoverAgentSkillInventory, JsonSessionStore, loadSkillPackage, SystemCredentialStore } from "../dist/node/index.js";
+import { discoverAgentSkillInventory, inspectProject, JsonSessionStore, loadSkillPackage, planProjectVerification, SystemCredentialStore } from "../dist/node/index.js";
 import { FakeToolAgentEngine } from "../dist/testing/index.js";
 
 assert.equal(typeof AgentV, "function");
@@ -18,6 +18,7 @@ assert.equal(resolveToolExecutionPolicy({ afterRequired: "disable" }).afterRequi
 assert.equal(typeof AiSdkToolAgentEngine, "function");
 assert.equal(typeof LocalCliRuntimeEngine, "function");
 assert.equal(typeof LocalCliRuntimeDiscovery, "function");
+assert.equal(typeof startLocalMcpBridge, "function");
 assert.equal(typeof OllamaRuntime, "function");
 assert.equal(typeof ProviderRuntime, "function");
 assert.equal(typeof defineProviderProfile, "function");
@@ -30,12 +31,15 @@ assert.equal(builtInAgentRecipes.frontend.id, "frontend");
 assert.equal(builtInAgentSkills.repositoryComprehension.id, "repository-comprehension");
 assert.equal(standardToolNames.applyWorkspacePatch, "apply-workspace-patch");
 assert.equal(standardToolNames.browserConsole, "browser-console");
+assert.equal(standardToolNames.browserNetwork, "browser-network");
 assert.equal(createCalculatorTool().name, "calculate");
 assert.equal(typeof createStandardApprovalPolicy, "function");
 assert.equal(typeof createFilesystemTools, "function");
 assert.equal(typeof JsonSessionStore, "function");
 assert.equal(typeof loadSkillPackage, "function");
 assert.equal(typeof discoverAgentSkillInventory, "function");
+assert.equal(typeof inspectProject, "function");
+assert.equal(typeof planProjectVerification, "function");
 assert.equal(typeof SystemCredentialStore, "function");
 assert.equal(typeof FakeToolAgentEngine, "function");
 
@@ -50,6 +54,7 @@ assert.equal(publicNode.SystemCredentialStore, SystemCredentialStore);
 assert.equal(publicRuntime.createAgentRuntime, createAgentRuntime);
 assert.equal(publicSkills.builtInAgentRecipes.coding.id, "coding");
 assert.equal(publicTools.createCalculatorTool().name, "calculate");
+assert.equal(typeof publicTools.executeAgentTool, "function");
 assert.equal(publicNodeTools.createFilesystemTools, createFilesystemTools);
 
 const cli = spawnSync(process.execPath, ["dist/cli/index.js", "--help"], { encoding: "utf8" });

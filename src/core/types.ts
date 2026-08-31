@@ -16,6 +16,7 @@ export type BuiltInCapability =
   | "local-workspace"
   | "read-only-workspace"
   | "workspace-write"
+  | "mcp-tools"
   | "skills"
   | "artifacts"
   | "citations";

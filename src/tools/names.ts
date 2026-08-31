@@ -20,6 +20,7 @@ export const standardToolNames = {
   httpFetch: "http-fetch",
   browserSnapshot: "browser-snapshot",
   browserConsole: "browser-console",
+  browserNetwork: "browser-network",
   browserScreenshot: "browser-screenshot",
   browserWait: "browser-wait",
   browserNavigate: "browser-navigate",

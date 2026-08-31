@@ -35,6 +35,8 @@ export interface StructuredModelEngine {
 
 export interface ToolExecutionContext extends RunContext {
   toolCallId: string;
+  /** Present when the host approved this exact invocation before execution. */
+  approvalId?: string;
   artifacts: readonly ContextArtifact[];
 }
 
@@ -83,6 +85,8 @@ export interface ApprovalRequest {
 /** Host authority that resolves an approval request before a guarded tool executes. */
 export interface ApprovalPolicy {
   decide(request: ApprovalRequest): Promise<"approved" | "denied">;
+  /** Optional host hook for abandoning a pending decision when its run is cancelled. */
+  cancel?(approvalId: string, reason?: string): Promise<void> | void;
 }
 
 /** Provider-neutral policy for mandatory tool phases in a bounded agent run. */
@@ -155,6 +159,10 @@ export interface CodingRuntimeRequest<T> extends RunContext {
   workspacePath?: string;
   workspaceAccess?: "read-only" | "workspace-write";
   maxAttempts?: 1 | 2;
+  /** Host-owned tools injected into a compatible local CLI for this run only. */
+  tools?: readonly AgentTool[];
+  /** Required whenever an injected tool requests explicit approval. */
+  approvalPolicy?: ApprovalPolicy;
 }
 
 export interface CodingRuntimeResult<T> extends StructuredGenerationResult<T> {

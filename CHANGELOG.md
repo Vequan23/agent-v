@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+## 0.10.0
+
+- Add declarative official install, authentication, and update actions to local harness inventory without executing commands, opening URLs, or weakening host approval policy.
+- Advertise Claude Code workspace writes only through the strict per-run MCP path, with native tools removed, ambient MCP ignored, and the exact host server authorized in Default mode. Ordinary read-only runs remain in Plan mode.
+- Add a version-gated OpenCode 1.x isolation strategy that disables project configuration, external extensions, sharing, and native tools, then authorizes only the authenticated Vraxis MCP namespace. Unknown major versions fail closed.
+- Add a version-gated Cursor ACP adapter that creates a private session workspace, advertises no client filesystem or terminal, installs deny-all native CLI rules, injects only the per-run Vraxis MCP server, and rejects every non-Vraxis permission request.
+- Add a non-executing project doctor that discovers project ecosystems, frameworks, package managers, verification commands, and development-server recipes as safe argv contracts.
+- Add deterministic verification-plan composition that lets products orchestrate checks without embedding npm-only assumptions in their own service layer.
+- Add a provider-neutral scoped approval evaluator with explicit deny/ask/allow rules, deny precedence, expiration, and redacted decision evidence.
+
+- Add optional approval-gated first-origin browser navigation, approval receipt propagation to browser controllers, and bounded browser network evidence.
+- Add additive `tools` and `approvalPolicy` fields to coding-runtime requests, allowing compatible local CLI harnesses to call host-owned tools without changing existing consumers.
+- Add an authenticated, loopback-only, per-run MCP stdio bridge with private temporary descriptors, schema validation, scoped permissions, host approval, cancellation, timeouts, and normalized tool events.
+- Inject ephemeral MCP configuration into Codex, Claude Code, and OpenCode without modifying user or project configuration; unsupported runtimes fail closed.
+- Force native CLI workspace access to read-only whenever host MCP tools are present, so file mutation and command execution must cross the host tool and approval boundary.
+
 ## 0.9.0
 
 - Add bounded file discovery, atomic exact multi-file edits, directory creation, non-overwriting moves, and explicitly destructive removal without expanding the default runtime authority.

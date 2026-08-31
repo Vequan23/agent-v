@@ -5,6 +5,7 @@ import { defaultConfig, type AgentEvent, type AgentSession, type AgentVConfig, t
 export * from "./skills.js";
 export * from "./skill-inventory.js";
 export * from "./doctor.js";
+export * from "./project-doctor.js";
 export * from "./credentials.js";
 export * from "../tools/node/index.js";
 

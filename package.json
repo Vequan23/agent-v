@@ -1,6 +1,6 @@
 {
   "name": "@vraxis/agent-v",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "A provider-neutral engine for building inspectable, extensible agentic products.",
   "repository": {
     "type": "git",
@@ -89,7 +89,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test test/*.test.ts",
     "test:examples": "tsc --noEmit -p examples/tsconfig.json && node --import tsx examples/smoke.ts",
-    "test:package": "node test/package-smoke.mjs",
+    "test:package": "node test/package-smoke.mjs && node test/package-mcp-smoke.mjs",
     "check": "npm run typecheck && npm test && npm run build && npm run test:examples && npm run test:package && npm pack --dry-run --cache .npm-cache"
   },
   "devDependencies": {

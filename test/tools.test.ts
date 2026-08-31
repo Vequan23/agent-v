@@ -8,6 +8,7 @@ import {
   createHttpFetchTool,
   createJsonValidationTool,
   createStandardApprovalPolicy,
+  createScopedApprovalPolicy,
   standardToolNames,
   type BrowserController,
 } from "../src/tools/index.ts";
@@ -64,6 +65,44 @@ test("standard approval policy is deny-by-default and records explicit category 
   assert.doesNotMatch(JSON.stringify(policy.history), /example\.com/);
 });
 
+test("scoped approval policy applies deny precedence and asks only when required", async () => {
+  const asked: string[] = [];
+  const policy = createScopedApprovalPolicy({
+    now: () => new Date("2026-08-31T00:00:00.000Z"),
+    rules: [
+      { id: "allow-project-browser", effect: "allow", categories: ["browser"], projectIds: ["approval"] },
+      { id: "deny-browser-type", effect: "deny", toolNames: ["browser-type"], projectIds: ["approval"] },
+      { id: "expired-command", effect: "allow", categories: ["command"], expiresAt: "2026-08-30T00:00:00.000Z" },
+    ],
+    requestDecision(request) {
+      asked.push(request.id);
+      return "approved";
+    },
+  });
+  const request = {
+    id: "approval-browser",
+    runId: "run-1",
+    toolName: "browser-click",
+    input: { target: "e1" },
+    reason: "Browser control",
+    category: "browser" as const,
+    risk: "external-side-effect" as const,
+    sideEffect: "idempotent" as const,
+    requiredPermissions: ["browser:control"],
+    scope: localExecutionScope("approval"),
+  };
+  assert.equal(await policy.decide(request), "approved");
+  assert.equal(await policy.decide({ ...request, id: "approval-type", toolName: "browser-type" }), "denied");
+  assert.equal(await policy.decide({ ...request, id: "approval-command", toolName: "run-command", category: "command" }), "approved");
+  assert.deepEqual(asked, ["approval-command"]);
+  assert.deepEqual(policy.history.map(({ effect, ruleId, decision }) => ({ effect, ruleId, decision })), [
+    { effect: "allow", ruleId: "allow-project-browser", decision: "approved" },
+    { effect: "deny", ruleId: "deny-browser-type", decision: "denied" },
+    { effect: "ask", ruleId: undefined, decision: "approved" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(policy.history), /target|e1/);
+});
+
 test("HTTP tool requires approval, enforces its host allowlist, and does not follow redirects", async () => {
   const calls: unknown[] = [];
   const fetchTool = createHttpFetchTool({
@@ -92,6 +131,7 @@ test("browser tools verify the current origin before reads and controls", async 
     async currentUrl() { return currentUrl; },
     async snapshot() { return { title: "Example" }; },
     async consoleMessages() { return { messages: [{ level: "error", text: "Example failure" }] }; },
+    async networkRequests() { return { requests: [{ method: "GET", status: 200 }] }; },
     async screenshot() { return { artifactId: "screenshot-1" }; },
     async wait(target, options) { return { target, timeoutMs: options?.timeoutMs ?? 0 }; },
     async navigate(url) { currentUrl = url; return { url }; },
@@ -104,6 +144,8 @@ test("browser tools verify the current origin before reads and controls", async 
   const consoleEvidence = tools.find((tool) => tool.name === standardToolNames.browserConsole)!;
   assert.equal(consoleEvidence.requiresApproval, false);
   assert.deepEqual(await consoleEvidence.execute(consoleEvidence.input.parse({}), context), { messages: [{ level: "error", text: "Example failure" }] });
+  const networkEvidence = tools.find((tool) => tool.name === standardToolNames.browserNetwork)!;
+  assert.deepEqual(await networkEvidence.execute(networkEvidence.input.parse({}), context), { requests: [{ method: "GET", status: 200 }] });
   const screenshot = tools.find((tool) => tool.name === standardToolNames.browserScreenshot)!;
   assert.deepEqual(await screenshot.execute(screenshot.input.parse({}), context), { artifactId: "screenshot-1" });
   const wait = tools.find((tool) => tool.name === standardToolNames.browserWait)!;
@@ -114,4 +156,24 @@ test("browser tools verify the current origin before reads and controls", async 
   assert.throws(() => createBrowserTools({ controller, allowedOrigins: ["http://remote.example"] }), /must use HTTPS/);
   currentUrl = "https://other.example/path";
   await assert.rejects(Promise.resolve(snapshot.execute(snapshot.input.parse({}), context)), /not allowed/);
+});
+
+test("browser navigation can request a new safe origin through the approval lifecycle", async () => {
+  let received: { url: string; approvalId?: string } | undefined;
+  const controller: BrowserController = {
+    async currentUrl() { return "about:blank"; },
+    async snapshot() { return {}; },
+    async navigate(url, options) {
+      received = { url, ...(options?.approvalId ? { approvalId: options.approvalId } : {}) };
+      return { url };
+    },
+    async click() { return {}; },
+    async type() { return {}; },
+  };
+  const navigate = createBrowserTools({ controller, allowedOrigins: [], allowNavigationRequests: true })
+    .find((tool) => tool.name === standardToolNames.browserNavigate);
+  assert.equal(navigate?.name, standardToolNames.browserNavigate);
+  assert.deepEqual(await navigate!.execute(navigate!.input.parse({ url: "https://new.example/path" }), { ...context, approvalId: "approval-browser-1" }), { url: "https://new.example/path" });
+  assert.deepEqual(received, { url: "https://new.example/path", approvalId: "approval-browser-1" });
+  assert.throws(() => navigate!.input.parse({ url: "http://new.example/path" }), /must use HTTPS/);
 });

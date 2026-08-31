@@ -79,6 +79,7 @@ test("model resolution failures still produce an auditable failed run", async ()
 test("tool calls require scope permissions and explicit approval", async () => {
   let calls = 0;
   let executions = 0;
+  let executionApprovalId: string | undefined;
   const model = new MockLanguageModelV4({
     doGenerate: async () => {
       calls += 1;
@@ -108,7 +109,7 @@ test("tool calls require scope permissions and explicit approval", async () => {
     sideEffect: "non-idempotent",
     requiredPermissions: ["notes:publish"],
     timeoutMs: 1_000,
-    execute() { executions += 1; return { published: true }; },
+    execute(_input, context) { executions += 1; executionApprovalId = context.approvalId; return { published: true }; },
   });
   const approval = new StaticApprovalPolicy("approved");
   const scope = { ...localExecutionScope("notes"), permissions: ["notes:publish"] };
@@ -119,6 +120,7 @@ test("tool calls require scope permissions and explicit approval", async () => {
   assert.equal(approval.requests.length, 1);
   assert.equal(approval.requests[0]?.scope.projectId, "notes");
   assert.equal(approval.requests[0]?.toolVersion, "1.0.0");
+  assert.equal(executionApprovalId, approval.requests[0]?.id);
   assert.deepEqual(result.toolAudit.observedSequence, ["publish-note"]);
   assert.equal(result.toolAudit.calls[0]?.approval, "approved");
   assert.equal(result.toolAudit.calls[0]?.status, "completed");

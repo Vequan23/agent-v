@@ -4,12 +4,12 @@
 
 It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## What works in 0.9
+## What works in 0.10
 
 - Batteries-included hosted provider resolution for OpenAI, Anthropic, Google Gemini, DeepSeek, Z.AI, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
 - Codex CLI, Claude Code, Cursor Agent, and OpenCode runtime adapters with honest access-mode capabilities and bounded schema output.
-- Drop-in local harness inventory with ordered command candidates, known install locations, desktop-app detection, authentication state, model catalogs or aliases, and update metadata.
+- Drop-in local harness inventory with ordered command candidates, known install locations, desktop-app detection, authentication state, model catalogs or aliases, update metadata, and declarative official maintenance actions.
 - Local Ollama models through an optional AI SDK 7-compatible adapter with daemon and installed-model readiness checks.
 - Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
 - Opt-in standard tools for arithmetic, time, schema validation, bounded workspace discovery and mutation, Git history, allowlisted commands, HTTP, and host-controlled browser evidence and controls.
@@ -20,6 +20,7 @@ It is an engine, not a chatbot framework and not a repository of every product-s
 - Memory and local JSON/JSONL persistence with tenant/project isolation, plus environment and native system-keyring credential infrastructure.
 - Deterministic fakes, provider-free tests, built-package smoke testing, and CI on Node 22 and 24.
 - Packaged guidance for coding agents, executable consumer examples, compatibility metadata, and a safe readiness doctor.
+- Non-executing project inspection with manifest-backed verification and development-server recipes for Node, Python, Rust, and Go projects.
 
 ## Install
 
@@ -47,7 +48,45 @@ for (const harness of harnesses) {
 
 Discovery is local and argv-based: it never opens a shell. It checks the canonical command, verified aliases, known per-user install locations, and supported app-bundled command shapes. Cursor can resolve the `cursor agent` subcommand inside Cursor Desktop and query the models available to the signed-in account. Claude Desktop is reported separately from Claude Code; installing the chat application does not fabricate a usable coding CLI. Claude Code exposes its stable model aliases plus model names explicitly configured in user or project settings. Partial failures are isolated, so one broken harness does not hide the rest of the inventory.
 
+Each inventory item also exposes declarative maintenance actions. Missing harnesses receive an official HTTPS documentation target; installed harnesses receive argv-safe sign-in and update commands when the harness publishes them. agent-v never opens the URL or runs the command. The consuming product owns presentation, network consent, terminal approval, and refresh.
+
 The same resolution is used by `LocalCliRuntimeEngine`, so an app can pass an inventory selection directly as `runtimeId` and `runtimeModel` without maintaining a second execution path.
+
+Codex, Claude Code, stable OpenCode 1.x, and verified Cursor ACP releases can expose governed workspace writes when a host supplies the per-run MCP bridge. Agent-v removes or denies native mutation tools, ignores ambient project configuration where the harness supports it, and exposes only the authenticated host server. OpenCode uses `--pure`, a private per-run configuration home, disables project configuration and external skill scans, and applies a final deny-all permission override with only `vraxis_*` allowed. Cursor ACP receives a private workspace with deny-all native Shell/Read/Write rules, no client filesystem or terminal capability, an explicit one-server MCP session, and fail-closed permission routing. Unknown OpenCode majors and unverified Cursor releases fail closed.
+
+## Inspect a project before executing it
+
+Products can discover verification commands without executing package scripts or coupling their service layer to one ecosystem:
+
+```ts
+import { inspectProject, planProjectVerification } from "@vraxis/agent-v/node";
+
+const report = await inspectProject(approvedProjectRoot);
+const plan = planProjectVerification(report, changedFiles);
+
+for (const check of plan.checks) {
+  console.log(check.title, check.command, check.args);
+}
+```
+
+The doctor reads only known root manifests and lockfiles. It returns argv pairs, relative working directories, sources, time bounds, project issues, and optional development-server URLs. The host remains responsible for approvals, execution, browser evidence, persistence, and the final verification verdict.
+
+Local coding runtimes can also receive host-owned tools through additive `tools` and `approvalPolicy` request fields. Agent-v creates a private, authenticated MCP bridge for that run, injects it through the runtime's supported ephemeral configuration, and removes it afterward. Existing requests without tools behave exactly as before.
+
+```ts
+await engine.run({
+  runtimeId: "codex",
+  workspacePath: approvedProjectRoot,
+  workspaceAccess: "workspace-write",
+  scope: localExecutionScope("project"),
+  input: { prompt: "Run the tests, fix the failure, and report the evidence." },
+  output: resultContract,
+  tools: hostTools,
+  approvalPolicy: productApprovalPolicy,
+});
+```
+
+With host tools present, native CLI workspace access is forced read-only and native command/browser paths are removed where supported. Codex also ignores user config and user MCP servers for that run; Claude Code receives no built-in tools, ignores ambient MCP servers, and authorizes only the exact Vraxis MCP server. Claude runs that need governed host mutations use Default permission mode because Plan mode forbids all mutations; the empty native-tool set means those mutations can still occur only through Vraxis. OpenCode 1.x receives a per-run deny-all permission envelope, disables project configuration, external skills, plugin loading, automatic updates and sharing, then allows only the authenticated `vraxis_*` MCP tool namespace. Verified Cursor releases run through ACP in a private workspace with native shell, file, and terminal capabilities denied and only the per-run Vraxis MCP server attached. The harness must use the host tools for reads, writes, commands, browser controls, or other side effects, so the product's permissions, approvals, receipts, and cancellation remain authoritative. Codex, Claude Code, stable OpenCode 1.x, and verified Cursor ACP releases support the full guarded path today; unverified runtime versions fail closed.
 
 ## Define a tool, skill, and agent
 
@@ -185,9 +224,11 @@ const app = createAgentRuntime({
 
 The factory defaults to a deny-all approval policy. It never infers a workspace, command, network host, browser origin, credential decision, or destructive capability.
 
+Products that need reusable policy evaluation can use `createScopedApprovalPolicy`. Rules may match approval categories, tool names, projects, and principals; matching deny rules take precedence over allow rules, expired rules are ignored, and unresolved requests are delegated to the host's reviewed approval UI. The evaluator retains redacted decision metadata only. Rule persistence, durations, explanations, and revocation remain product-owned.
+
 ## Standard tools and skills
 
-- `@vraxis/agent-v/tools` provides calculator, date/time, named output-contract validation, allowlisted HTTP, browser-controller evidence and controls, and categorized approval policies. Console capture, screenshots, and bounded waits are registered only when the host controller implements them.
+- `@vraxis/agent-v/tools` provides calculator, date/time, named output-contract validation, allowlisted HTTP, browser-controller evidence and controls, and categorized approval policies. Console capture, credential-redacted network evidence, screenshots, and bounded waits are registered only when the host controller implements them. Hosts may also opt into approval-gated first-origin navigation so an agent can request a new safe HTTP(S) destination without receiving ambient browser authority.
 - `@vraxis/agent-v/tools/node` provides canonical-root file discovery, reads, writes, exact single- and multi-file edits, directory creation, moves, removal, Git status/diff/log/show, and argument-array command execution with an explicit allowlist. Filesystem tools do not follow symlinks outside the approved root, do not overwrite move targets, and never allow the workspace root to be removed. Local commands run with the host user's authority; the package constrains cwd and avoids a shell but does not claim OS sandboxing.
 - `@vraxis/agent-v/skills` provides opt-in repository comprehension, workspace editing, verification, debugging, review, architecture, frontend verification, dependency, security, research, and document skills plus `coding`, `planning`, `debugging`, `research`, `review`, `security`, `frontend`, and `document` recipes.
 
@@ -305,12 +346,12 @@ Runtime built-ins that are not represented by local files or a public inventory 
 
 - `@vraxis/agent-v/ai-sdk`: AI SDK structured and tool-agent engines.
 - `@vraxis/agent-v/providers`: hosted provider catalog, profile builder, model resolver, configuration inspection, and normalized provider provenance.
-- `@vraxis/agent-v/local-cli`: bounded local coding runtimes and readiness probes.
+- `@vraxis/agent-v/local-cli`: bounded local coding runtimes, readiness probes, and authenticated per-run MCP tool bridging.
 - `@vraxis/agent-v/ollama`: optional local/remote Ollama structured and tool-agent engines.
 - `@vraxis/agent-v/node`: JSON config/session stores, JSONL event ledger, filesystem skills, environment credential resolution, and native system-keyring storage.
 - `@vraxis/agent-v/testing`: deterministic engines and approval policies.
 
-Local CLI discovery and readiness are separate. An executable is `installed`; only a bounded, authenticated, schema-valid probe is `ready`. OpenCode advertises workspace-write only, so a default read-only request fails closed instead of weakening the requested policy.
+Local CLI discovery and readiness are separate. An executable is `installed`; only a bounded, authenticated, schema-valid probe is `ready`. Unsupported workspace or MCP isolation combinations fail closed instead of weakening the requested policy or writing hidden configuration.
 
 ## Agent-readable integration guidance
 

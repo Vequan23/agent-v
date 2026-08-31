@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.9.0",
+  "packageVersion": "0.10.0",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
@@ -33,11 +33,11 @@
     "standard-tools": {
       "format": "agent-v-tool-catalog-v1",
       "defaultAuthority": "pure-tools-only",
-      "approvalPolicy": "deny-by-default",
+      "approvalPolicy": "deny-by-default-or-scoped-deny-ask-allow",
       "nodeWorkspacePolicy": "canonical-root-no-symlink-escape-no-root-removal",
       "networkPolicy": "https-or-loopback-explicit-host-allowlist",
       "browserPolicy": "host-controller-explicit-origin-allowlist",
-      "tools": ["calculate", "date-time", "validate-json", "list-directory", "find-files", "read-text", "search-text", "write-text", "apply-text-edits", "apply-workspace-patch", "create-directory", "move-path", "remove-path", "git-status", "git-diff", "git-log", "git-show", "run-command", "http-fetch", "browser-snapshot", "browser-console", "browser-screenshot", "browser-wait", "browser-navigate", "browser-click", "browser-type"]
+      "tools": ["calculate", "date-time", "validate-json", "list-directory", "find-files", "read-text", "search-text", "write-text", "apply-text-edits", "apply-workspace-patch", "create-directory", "move-path", "remove-path", "git-status", "git-diff", "git-log", "git-show", "run-command", "http-fetch", "browser-snapshot", "browser-console", "browser-network", "browser-screenshot", "browser-wait", "browser-navigate", "browser-click", "browser-type"]
     },
     "starter-recipes": {
       "format": "agent-v-starter-recipes-v1",
@@ -52,24 +52,27 @@
     },
     "local-cli": {
       "discovery": "local-cli-inventory-v1",
+      "maintenanceActions": "declarative-host-governed-v1",
       "commandResolution": "ordered-argv-candidates-v1",
+      "mcpBridge": "authenticated-loopback-stdio-v1",
+      "hostToolPolicy": "native-read-only-when-injected",
       "versionPolicy": "detect-before-each-run-and-invalidate-readiness-on-change",
       "runtimes": {
         "codex": {
           "strategy": "codex-exec-json-v1",
-          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"]
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts", "mcp-tools"]
         },
         "opencode": {
-          "strategy": "opencode-run-json-v2",
-          "capabilities": ["structured-output", "local-workspace", "workspace-write", "artifacts"]
+          "strategy": "opencode-run-json-v3",
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts", "mcp-tools"]
         },
         "claude-code": {
-          "strategy": "claude-print-json-v2",
-          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "artifacts"]
+          "strategy": "claude-print-json-v3",
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts", "mcp-tools"]
         },
         "cursor": {
-          "strategy": "cursor-print-json-v2",
-          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"]
+          "strategy": "cursor-acp-v1",
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts", "mcp-tools"]
         }
       }
     },
