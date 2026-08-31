@@ -23,3 +23,22 @@ export async function createReviewRuntime(projectRoot: string) {
     }),
   });
 }
+
+export async function createPlanningRuntime(projectRoot: string) {
+  const tools = await createWorkspaceTools({
+    rootPath: projectRoot,
+    // Registers Git inspection. The planning recipe does not grant run-command.
+    allowedCommands: [process.execPath],
+  });
+  return createAgentRuntime({
+    execution: { type: "engine", engine: new FakeToolAgentEngine() },
+    agent: {
+      id: "project-planner",
+      name: "Project planner",
+      instructions: "Plan the requested change around the product's architecture and current repository evidence.",
+      recipe: "planning",
+      requiredCapabilities: ["tools"],
+    },
+    tools,
+  });
+}

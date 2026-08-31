@@ -23,9 +23,12 @@ Choose from required behavior, not provider preference:
 | Operational starter recipes | `@vraxis/agent-v/skills` | Coding, research, review, and document composition |
 | Local or remote Ollama model | `@vraxis/agent-v/ollama` | AI SDK engines through `OllamaRuntime` |
 | Coding agent against a workspace | `@vraxis/agent-v/local-cli` | `CodingRuntimeEngine` |
+| Local harness picker and model inventory | `@vraxis/agent-v/local-cli` | `LocalCliRuntimeDiscovery` |
 | Local persistence or diagnostics | `@vraxis/agent-v/node` | Store and doctor ports |
 
 An executable being installed is not readiness evidence. Inspect first; use a bounded live probe only when its credentials, cost, and external effects are authorized.
+
+Use `LocalCliRuntimeDiscovery` for reusable settings and composer pickers. Its inventory distinguishes the executable harness from a related desktop application, resolves supported command shapes, and returns normalized authentication, models, and update metadata. Do not duplicate CLI paths or parse harness output inside a product.
 
 ## Defining tools safely
 
@@ -64,7 +67,7 @@ For built-in hosted providers, use `defineProviderProfile()` and `ProviderRuntim
 - Importing provider SDK types into product domain code instead of registering an adapter.
 - Omitting `ExecutionScope` or granting wildcard permissions outside a local single-user application.
 - Treating a skill's `allowed-tools` metadata as approval for side effects.
-- Assuming OpenCode can enforce read-only access or Cursor can guarantee structured output when their current adapter capabilities say otherwise.
+- Assuming OpenCode can enforce read-only access or treating Claude Desktop as Claude Code.
 - Registering Ollama without checking that the daemon is reachable and the selected model is installed.
 - Retrying malformed output by removing the schema requirement.
 - Copying examples without compiling them against the installed package version.

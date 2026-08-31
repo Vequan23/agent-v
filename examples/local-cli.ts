@@ -1,5 +1,9 @@
 import { defineOutput, localExecutionScope } from "@vraxis/agent-v";
-import { LocalCliRuntimeEngine } from "@vraxis/agent-v/local-cli";
+import { LocalCliRuntimeDiscovery, LocalCliRuntimeEngine } from "@vraxis/agent-v/local-cli";
+
+export function discoverLocalCodingHarnesses(approvedProjectRoot: string) {
+  return new LocalCliRuntimeDiscovery({ cwd: approvedProjectRoot }).list();
+}
 
 export function createRepositorySummaryRequest(workspacePath: string) {
   const engine = new LocalCliRuntimeEngine();

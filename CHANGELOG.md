@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0
+
+- Add bounded file discovery, atomic exact multi-file edits, directory creation, non-overwriting moves, and explicitly destructive removal without expanding the default runtime authority.
+- Add read-only Git log and show tools plus optional browser console, screenshot, and bounded-wait evidence contracts.
+- Add repository comprehension, debugging, code review, architecture, frontend verification, dependency management, and security review skills.
+- Add planning, debugging, security, and frontend starter recipes while preserving product-owned instructions and deny-by-default approvals.
+- Add a drop-in local harness inventory for applications, including authentication, normalized model catalogs or aliases, update metadata, and partial-failure isolation.
+- Resolve coding CLIs through ordered, identifiable argv candidates across PATH, known per-user locations, and supported desktop-app bundles without invoking a shell.
+- Discover Cursor's bundled `cursor agent` command and account model catalog while distinguishing Claude Desktop from the separately installed Claude Code CLI.
+- Reuse resolved command prefixes for existing local CLI execution without changing runtime ids or request contracts.
+
 ## 0.8.0
 
 - Add schema-valid Cursor Agent execution with its documented read-only Ask mode for reading and review products.

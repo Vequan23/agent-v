@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { defineOutput, defineTool, type AgentTool, type JsonObject } from "../../core/index.js";
@@ -22,6 +22,36 @@ function stringField(value: unknown, field: string, options: { allowEmpty?: bool
 function within(root: string, candidate: string): boolean {
   const path = relative(root, candidate);
   return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path));
+}
+
+function slashPath(value: string): string {
+  return value.split(sep).join("/");
+}
+
+function globPattern(value: string): RegExp {
+  if (!value.trim() || value.length > 500 || value.includes("\0") || isAbsolute(value)) throw new TypeError("pattern must be a bounded relative glob.");
+  const normalized = value.replace(/\\/g, "/");
+  if (normalized.split("/").includes("..")) throw new TypeError("pattern cannot escape the approved workspace root.");
+  let source = "^";
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index]!;
+    if (character === "*" && normalized[index + 1] === "*") {
+      index += 1;
+      if (normalized[index + 1] === "/") {
+        index += 1;
+        source += "(?:.*/)?";
+      } else {
+        source += ".*";
+      }
+    } else if (character === "*") {
+      source += "[^/]*";
+    } else if (character === "?") {
+      source += "[^/]";
+    } else {
+      source += character.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    }
+  }
+  return new RegExp(`${source}$`);
 }
 
 class BoundedWorkspace {
@@ -57,6 +87,18 @@ class BoundedWorkspace {
     });
     if (existing && !within(this.rootPath, existing)) throw new TypeError("Path resolves outside the approved workspace root.");
     return candidate;
+  }
+
+  async entry(relativePath: string): Promise<string> {
+    const candidate = this.lexical(relativePath);
+    const canonical = await realpath(candidate);
+    if (!within(this.rootPath, canonical)) throw new TypeError("Path resolves outside the approved workspace root.");
+    return candidate;
+  }
+
+  gitPath(relativePath: string): string {
+    const candidate = this.lexical(relativePath);
+    return slashPath(relative(this.rootPath, candidate)) || ".";
   }
 }
 
@@ -115,6 +157,57 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
             type: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : entry.isSymbolicLink() ? "symlink" : "other",
           })),
         };
+      },
+    }),
+    defineTool({
+      name: standardToolNames.findFiles,
+      version: "1.0.0",
+      description: "Find files matching a bounded glob without following symlinks outside the approved workspace.",
+      input: defineOutput({
+        name: "find-files-input",
+        jsonSchema: {
+          type: "object",
+          properties: { pattern: { type: "string" }, path: { type: "string" } },
+          required: ["pattern"],
+          additionalProperties: false,
+        },
+        parse(value) {
+          const input = record(value, "Find files input");
+          const pattern = stringField(value, "pattern");
+          globPattern(pattern);
+          return { pattern, path: input.path === undefined ? "." : stringField(value, "path") };
+        },
+      }),
+      output: objectOutput,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["filesystem:read"],
+      requiresApproval: false,
+      timeoutMs: 15_000,
+      async execute({ pattern, path }) {
+        const start = await workspace.existing(path);
+        const matcher = globPattern(pattern);
+        const matches: string[] = [];
+        let files = 0;
+        const inspect = async (candidate: string) => {
+          files += 1;
+          const displayPath = slashPath(relative(workspace.rootPath, candidate));
+          if (matcher.test(displayPath)) matches.push(displayPath);
+        };
+        const walk = async (directory: string): Promise<void> => {
+          for (const entry of await readdir(directory, { withFileTypes: true })) {
+            if (files >= maxSearchFiles || matches.length >= maxSearchResults) return;
+            if (entry.isSymbolicLink() || (entry.isDirectory() && ignored.has(entry.name))) continue;
+            const child = resolve(directory, entry.name);
+            if (entry.isDirectory()) await walk(child);
+            else if (entry.isFile()) await inspect(child);
+          }
+        };
+        const info = await stat(start);
+        if (info.isDirectory()) await walk(start);
+        else if (info.isFile()) await inspect(start);
+        else throw new TypeError("Find path must identify a file or directory.");
+        return { pattern, path, matches: matches.sort((left, right) => left.localeCompare(right)), filesInspected: files, truncated: files >= maxSearchFiles || matches.length >= maxSearchResults };
       },
     }),
     defineTool({
@@ -206,8 +299,12 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
       async execute({ path, content }) {
         if (new TextEncoder().encode(content).byteLength > maxFileBytes) throw new RangeError(`Content exceeds the ${maxFileBytes} byte write limit.`);
         const file = await workspace.writable(path);
+        const existing = await lstat(file).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? undefined : Promise.reject(error));
+        if (existing && !existing.isFile()) throw new TypeError("Write path must identify a regular file or a new file.");
         const temporary = resolve(dirname(file), `.${basename(file)}.${crypto.randomUUID()}.tmp`);
-        await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 });
+        const mode = existing ? existing.mode & 0o777 : 0o600;
+        await writeFile(temporary, content, { encoding: "utf8", mode });
+        await chmod(temporary, mode);
         await rename(temporary, file);
         return { path, bytes: new TextEncoder().encode(content).byteLength };
       },
@@ -250,6 +347,7 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
       timeoutMs: 5_000,
       async execute({ path, edits }) {
         const file = await workspace.existing(path);
+        const info = await stat(file);
         let content = await readBoundedText(file);
         for (const edit of edits) {
           const occurrences = content.split(edit.find).length - 1;
@@ -259,9 +357,185 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
         }
         if (new TextEncoder().encode(content).byteLength > maxFileBytes) throw new RangeError(`Edited content exceeds the ${maxFileBytes} byte limit.`);
         const temporary = resolve(dirname(file), `.${basename(file)}.${crypto.randomUUID()}.tmp`);
-        await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 });
+        const mode = info.mode & 0o777;
+        await writeFile(temporary, content, { encoding: "utf8", mode });
+        await chmod(temporary, mode);
         await rename(temporary, file);
         return { path, editsApplied: edits.length, bytes: new TextEncoder().encode(content).byteLength };
+      },
+    }),
+    defineTool({
+      name: standardToolNames.applyWorkspacePatch,
+      version: "1.0.0",
+      description: "Apply exact reviewed replacements across multiple existing workspace text files.",
+      input: defineOutput({
+        name: "apply-workspace-patch-input",
+        jsonSchema: {
+          type: "object",
+          properties: {
+            files: {
+              type: "array",
+              minItems: 1,
+              maxItems: 25,
+              items: {
+                type: "object",
+                properties: {
+                  path: { type: "string" },
+                  edits: { type: "array", minItems: 1, maxItems: 100, items: { type: "object", properties: { find: { type: "string" }, replace: { type: "string" }, all: { type: "boolean" } }, required: ["find", "replace"], additionalProperties: false } },
+                },
+                required: ["path", "edits"],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ["files"],
+          additionalProperties: false,
+        },
+        parse(value) {
+          const input = record(value, "Workspace patch input");
+          if (!Array.isArray(input.files) || input.files.length < 1 || input.files.length > 25) throw new TypeError("files must contain between 1 and 25 entries.");
+          const files = input.files.map((item) => {
+            const file = record(item, "Workspace patch file");
+            if (typeof file.path !== "string" || !file.path.trim()) throw new TypeError("Each patch file path must be non-empty.");
+            if (!Array.isArray(file.edits) || file.edits.length < 1 || file.edits.length > 100) throw new TypeError("Each patch file must contain between 1 and 100 edits.");
+            const edits = file.edits.map((item) => {
+              const edit = record(item, "Workspace patch edit");
+              if (typeof edit.find !== "string" || !edit.find) throw new TypeError("Each patch find value must be non-empty.");
+              if (typeof edit.replace !== "string") throw new TypeError("Each patch replace value must be a string.");
+              if (edit.all !== undefined && typeof edit.all !== "boolean") throw new TypeError("Each patch all value must be a boolean.");
+              return { find: edit.find, replace: edit.replace, all: edit.all === true };
+            });
+            return { path: file.path, edits };
+          });
+          if (new Set(files.map((file) => file.path)).size !== files.length) throw new TypeError("Each workspace patch file path must be unique.");
+          return { files };
+        },
+      }),
+      output: objectOutput,
+      risk: "write",
+      sideEffect: "non-idempotent",
+      requiredPermissions: ["filesystem:write"],
+      requiresApproval: true,
+      approvalCategory: "write",
+      approvalReason: "Allow this agent to apply reviewed edits across workspace files.",
+      timeoutMs: 15_000,
+      async execute({ files }) {
+        const prepared = await Promise.all(files.map(async ({ path, edits }) => {
+          const file = await workspace.existing(path);
+          const info = await stat(file);
+          let before = await readBoundedText(file);
+          let after = before;
+          for (const edit of edits) {
+            const occurrences = after.split(edit.find).length - 1;
+            if (occurrences === 0) throw new TypeError(`An expected edit target was not found in ${path}.`);
+            if (!edit.all && occurrences !== 1) throw new TypeError(`An edit target is ambiguous in ${path}.`);
+            after = edit.all ? after.split(edit.find).join(edit.replace) : after.replace(edit.find, edit.replace);
+          }
+          if (new TextEncoder().encode(after).byteLength > maxFileBytes) throw new RangeError(`Edited content for ${path} exceeds the ${maxFileBytes} byte limit.`);
+          return { path, file, before, after, mode: info.mode & 0o777, edits: edits.length, temporary: resolve(dirname(file), `.${basename(file)}.${crypto.randomUUID()}.tmp`) };
+        }));
+        try {
+          for (const item of prepared) {
+            await writeFile(item.temporary, item.after, { encoding: "utf8", mode: item.mode });
+            await chmod(item.temporary, item.mode);
+          }
+          const applied: typeof prepared = [];
+          try {
+            for (const item of prepared) {
+              await rename(item.temporary, item.file);
+              applied.push(item);
+            }
+          } catch (error) {
+            for (const item of applied.reverse()) {
+              const rollback = `${item.temporary}.rollback`;
+              await writeFile(rollback, item.before, { encoding: "utf8", mode: item.mode });
+              await chmod(rollback, item.mode);
+              await rename(rollback, item.file);
+            }
+            throw error;
+          }
+        } finally {
+          await Promise.all(prepared.map((item) => rm(item.temporary, { force: true }).catch(() => undefined)));
+        }
+        return { files: prepared.map((item) => ({ path: item.path, editsApplied: item.edits })), editsApplied: prepared.reduce((total, item) => total + item.edits, 0) };
+      },
+    }),
+    defineTool({
+      name: standardToolNames.createDirectory,
+      version: "1.0.0",
+      description: "Create one directory whose parent is inside the approved workspace.",
+      input: pathInput("create-directory-input"),
+      output: objectOutput,
+      risk: "write",
+      sideEffect: "idempotent",
+      requiredPermissions: ["filesystem:write"],
+      requiresApproval: true,
+      approvalCategory: "write",
+      approvalReason: "Allow this agent to create a directory inside the approved workspace.",
+      timeoutMs: 5_000,
+      async execute({ path }) {
+        const directory = await workspace.writable(path);
+        await mkdir(directory).catch(async (error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST" || !(await lstat(directory)).isDirectory()) throw error;
+        });
+        return { path };
+      },
+    }),
+    defineTool({
+      name: standardToolNames.movePath,
+      version: "1.0.0",
+      description: "Move one existing workspace entry to a new path without overwriting another entry.",
+      input: defineOutput({
+        name: "move-path-input",
+        jsonSchema: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } }, required: ["from", "to"], additionalProperties: false },
+        parse(value) { return { from: stringField(value, "from"), to: stringField(value, "to") }; },
+      }),
+      output: objectOutput,
+      risk: "write",
+      sideEffect: "non-idempotent",
+      requiredPermissions: ["filesystem:write"],
+      requiresApproval: true,
+      approvalCategory: "write",
+      approvalReason: "Allow this agent to move a file or directory inside the approved workspace.",
+      timeoutMs: 5_000,
+      async execute({ from, to }) {
+        if (workspace.gitPath(from) === ".") throw new TypeError("The workspace root cannot be moved.");
+        const source = await workspace.entry(from);
+        const destination = await workspace.writable(to);
+        const destinationExists = await lstat(destination).then(() => true, (error: NodeJS.ErrnoException) => error.code === "ENOENT" ? false : Promise.reject(error));
+        if (destinationExists) throw new TypeError("Move destination already exists.");
+        await rename(source, destination);
+        return { from, to };
+      },
+    }),
+    defineTool({
+      name: standardToolNames.removePath,
+      version: "1.0.0",
+      description: "Remove one workspace entry, requiring an explicit recursive choice for directories.",
+      input: defineOutput({
+        name: "remove-path-input",
+        jsonSchema: { type: "object", properties: { path: { type: "string" }, recursive: { type: "boolean" } }, required: ["path"], additionalProperties: false },
+        parse(value) {
+          const input = record(value, "Remove path input");
+          if (input.recursive !== undefined && typeof input.recursive !== "boolean") throw new TypeError("recursive must be a boolean.");
+          return { path: stringField(value, "path"), recursive: input.recursive === true };
+        },
+      }),
+      output: objectOutput,
+      risk: "privileged",
+      sideEffect: "non-idempotent",
+      requiredPermissions: ["filesystem:write"],
+      requiresApproval: true,
+      approvalCategory: "destructive",
+      approvalReason: "Allow this agent to remove a file or directory inside the approved workspace.",
+      timeoutMs: 5_000,
+      async execute({ path, recursive }) {
+        if (workspace.gitPath(path) === ".") throw new TypeError("The workspace root cannot be removed.");
+        const entry = await workspace.entry(path);
+        const info = await lstat(entry);
+        if (info.isDirectory() && !recursive) throw new TypeError("Removing a directory requires recursive: true.");
+        await rm(entry, { recursive: info.isDirectory() && recursive, force: false });
+        return { path, type: info.isDirectory() ? "directory" : info.isSymbolicLink() ? "symlink" : "file" };
       },
     }),
   ];
@@ -336,6 +610,77 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
       requiresApproval: false,
       timeoutMs,
       execute({ staged }, context) { return git(["diff", ...(staged ? ["--staged"] : []), "--no-ext-diff"], context.abortSignal); },
+    }),
+    defineTool({
+      name: standardToolNames.gitLog,
+      version: "1.0.0",
+      description: "Read bounded Git commit history for the approved workspace or one project-relative path.",
+      input: defineOutput({
+        name: "git-log-input",
+        jsonSchema: {
+          type: "object",
+          properties: { limit: { type: "number" }, path: { type: "string" } },
+          additionalProperties: false,
+        },
+        parse(value) {
+          const input = record(value, "Git log input");
+          const limit = input.limit === undefined ? 20 : input.limit;
+          if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > 100) throw new TypeError("limit must be an integer between 1 and 100.");
+          return { limit: limit as number, path: input.path === undefined ? undefined : stringField(value, "path") };
+        },
+      }),
+      output,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["git:read"],
+      requiresApproval: false,
+      timeoutMs,
+      execute({ limit, path }, context) {
+        return git([
+          "log",
+          `--max-count=${limit}`,
+          "--date=iso-strict",
+          "--format=%H%x09%aI%x09%an%x09%s",
+          ...(path ? ["--", `:(literal)${workspace.gitPath(path)}`] : []),
+        ], context.abortSignal);
+      },
+    }),
+    defineTool({
+      name: standardToolNames.gitShow,
+      version: "1.0.0",
+      description: "Read one bounded Git revision with its patch, optionally limited to one project-relative path.",
+      input: defineOutput({
+        name: "git-show-input",
+        jsonSchema: {
+          type: "object",
+          properties: { revision: { type: "string" }, path: { type: "string" } },
+          additionalProperties: false,
+        },
+        parse(value) {
+          const input = record(value, "Git show input");
+          const revision = input.revision === undefined ? "HEAD" : stringField(value, "revision");
+          if (revision.startsWith("-") || revision.length > 200 || !/^[A-Za-z0-9._/@{}~^:+-]+$/.test(revision)) throw new TypeError("revision contains unsupported characters.");
+          return { revision, path: input.path === undefined ? undefined : stringField(value, "path") };
+        },
+      }),
+      output,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["git:read"],
+      requiresApproval: false,
+      timeoutMs,
+      execute({ revision, path }, context) {
+        return git([
+          "show",
+          "--no-ext-diff",
+          "--date=iso-strict",
+          "--format=fuller",
+          "--stat",
+          "--patch",
+          revision,
+          ...(path ? ["--", `:(literal)${workspace.gitPath(path)}`] : []),
+        ], context.abortSignal);
+      },
     }),
     defineTool({
       name: standardToolNames.runCommand,

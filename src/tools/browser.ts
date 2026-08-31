@@ -4,6 +4,9 @@ import { standardToolNames } from "./names.js";
 export interface BrowserController {
   currentUrl(options?: { abortSignal?: AbortSignal }): Promise<string>;
   snapshot(options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
+  consoleMessages?(options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
+  screenshot?(options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
+  wait?(target: string, options?: { abortSignal?: AbortSignal; timeoutMs?: number }): Promise<JsonObject>;
   navigate(url: string, options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
   click(target: string, options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
   type(target: string, text: string, options?: { abortSignal?: AbortSignal }): Promise<JsonObject>;
@@ -75,6 +78,63 @@ export function createBrowserTools(options: BrowserToolOptions): readonly AgentT
         return options.controller.snapshot({ abortSignal: context.abortSignal });
       },
     }),
+    ...(options.controller.consoleMessages ? [defineTool({
+      name: standardToolNames.browserConsole,
+      version: "1.0.0",
+      description: "Read bounded browser console evidence from the current allowed origin.",
+      input: defineOutput({ name: "browser-console-input", jsonSchema: { type: "object", additionalProperties: false }, parse: () => ({}) }),
+      output: objectOutput,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["browser:read"],
+      requiresApproval: false,
+      timeoutMs,
+      async execute(_, context) {
+        await verifyCurrentOrigin(context.abortSignal);
+        return options.controller.consoleMessages!({ abortSignal: context.abortSignal });
+      },
+    })] : []),
+    ...(options.controller.screenshot ? [defineTool({
+      name: standardToolNames.browserScreenshot,
+      version: "1.0.0",
+      description: "Capture browser screenshot evidence from the current allowed origin.",
+      input: defineOutput({ name: "browser-screenshot-input", jsonSchema: { type: "object", additionalProperties: false }, parse: () => ({}) }),
+      output: objectOutput,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["browser:read"],
+      requiresApproval: false,
+      timeoutMs,
+      async execute(_, context) {
+        await verifyCurrentOrigin(context.abortSignal);
+        return options.controller.screenshot!({ abortSignal: context.abortSignal });
+      },
+    })] : []),
+    ...(options.controller.wait ? [defineTool({
+      name: standardToolNames.browserWait,
+      version: "1.0.0",
+      description: "Wait for a stable browser target on the current allowed origin.",
+      input: defineOutput({
+        name: "browser-wait-input",
+        jsonSchema: { type: "object", properties: { target: { type: "string" }, timeoutMs: { type: "number" } }, required: ["target"], additionalProperties: false },
+        parse(value) {
+          const input = value as Record<string, unknown>;
+          const selectedTimeout = input?.timeoutMs === undefined ? timeoutMs : input.timeoutMs;
+          if (!Number.isInteger(selectedTimeout) || (selectedTimeout as number) < 100 || (selectedTimeout as number) > 30_000) throw new TypeError("timeoutMs must be an integer between 100 and 30000.");
+          return { target: stringInput(value, "target"), timeoutMs: selectedTimeout as number };
+        },
+      }),
+      output: objectOutput,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["browser:read"],
+      requiresApproval: false,
+      timeoutMs: 30_000,
+      async execute({ target, timeoutMs: selectedTimeout }, context) {
+        await verifyCurrentOrigin(context.abortSignal);
+        return options.controller.wait!(target, { abortSignal: context.abortSignal, timeoutMs: selectedTimeout });
+      },
+    })] : []),
     guarded({
       name: standardToolNames.browserNavigate,
       version: "1.0.0",

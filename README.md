@@ -4,15 +4,16 @@
 
 It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## What works in 0.7
+## What works in 0.9
 
 - Batteries-included hosted provider resolution for OpenAI, Anthropic, Google Gemini, DeepSeek, Z.AI, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
-- Codex CLI, Claude Code, and Cursor Agent runtime adapters with honest access-mode capabilities and bounded schema output. Cursor uses its read-only Ask mode for reading runs. OpenCode remains workspace-write only.
+- Codex CLI, Claude Code, Cursor Agent, and OpenCode runtime adapters with honest access-mode capabilities and bounded schema output.
+- Drop-in local harness inventory with ordered command candidates, known install locations, desktop-app detection, authentication state, model catalogs or aliases, and update metadata.
 - Local Ollama models through an optional AI SDK 7-compatible adapter with daemon and installed-model readiness checks.
 - Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
-- Opt-in standard tools for arithmetic, time, schema validation, bounded workspaces, Git, allowlisted commands, HTTP, and host-controlled browsers.
-- Categorized, deny-by-default approval policy plus coding, research, review, and document starter recipes.
+- Opt-in standard tools for arithmetic, time, schema validation, bounded workspace discovery and mutation, Git history, allowlisted commands, HTTP, and host-controlled browser evidence and controls.
+- Categorized, deny-by-default approval policy plus coding, planning, debugging, research, review, security, frontend, and document starter recipes.
 - Host-enforced required tool sequences and redacted tool-call audit evidence for governed evidence-first agents.
 - Portable skills defined in code or loaded from standard `SKILL.md` packages.
 - Tenant/project/principal execution scope on every run, approval, event, session, and model-resolution request.
@@ -27,6 +28,26 @@ npm install @vraxis/agent-v
 ```
 
 Hosted providers, AI SDK 7, and Ollama support are included. Native system-keyring binaries are installed as an optional platform dependency; environments without a supported credential manager fail explicitly and never fall back to plaintext. Node and local CLI adapters require Node.js 22.12 or newer. The core still imports no provider SDK or Node-only module.
+
+## Discover local coding harnesses
+
+Products should consume one inventory instead of reimplementing CLI paths, authentication probes, or model parsing:
+
+```ts
+import { LocalCliRuntimeDiscovery } from "@vraxis/agent-v/local-cli";
+
+const harnesses = await new LocalCliRuntimeDiscovery({
+  cwd: approvedProjectRoot,
+}).list();
+
+for (const harness of harnesses) {
+  console.log(harness.id, harness.readiness, harness.authentication, harness.models);
+}
+```
+
+Discovery is local and argv-based: it never opens a shell. It checks the canonical command, verified aliases, known per-user install locations, and supported app-bundled command shapes. Cursor can resolve the `cursor agent` subcommand inside Cursor Desktop and query the models available to the signed-in account. Claude Desktop is reported separately from Claude Code; installing the chat application does not fabricate a usable coding CLI. Claude Code exposes its stable model aliases plus model names explicitly configured in user or project settings. Partial failures are isolated, so one broken harness does not hide the rest of the inventory.
+
+The same resolution is used by `LocalCliRuntimeEngine`, so an app can pass an inventory selection directly as `runtimeId` and `runtimeModel` without maintaining a second execution path.
 
 ## Define a tool, skill, and agent
 
@@ -166,11 +187,11 @@ The factory defaults to a deny-all approval policy. It never infers a workspace,
 
 ## Standard tools and skills
 
-- `@vraxis/agent-v/tools` provides calculator, date/time, named output-contract validation, allowlisted HTTP, browser-controller tools, and categorized approval policies.
-- `@vraxis/agent-v/tools/node` provides canonical-root filesystem reads/writes/edits, Git status/diff, and argument-array command execution with an explicit allowlist. Filesystem tools do not follow symlinks outside the approved root. Local commands run with the host user's authority; the package constrains cwd and avoids a shell but does not claim OS sandboxing.
-- `@vraxis/agent-v/skills` provides opt-in operational skills and `coding`, `research`, `review`, and `document` recipes.
+- `@vraxis/agent-v/tools` provides calculator, date/time, named output-contract validation, allowlisted HTTP, browser-controller evidence and controls, and categorized approval policies. Console capture, screenshots, and bounded waits are registered only when the host controller implements them.
+- `@vraxis/agent-v/tools/node` provides canonical-root file discovery, reads, writes, exact single- and multi-file edits, directory creation, moves, removal, Git status/diff/log/show, and argument-array command execution with an explicit allowlist. Filesystem tools do not follow symlinks outside the approved root, do not overwrite move targets, and never allow the workspace root to be removed. Local commands run with the host user's authority; the package constrains cwd and avoids a shell but does not claim OS sandboxing.
+- `@vraxis/agent-v/skills` provides opt-in repository comprehension, workspace editing, verification, debugging, review, architecture, frontend verification, dependency, security, research, and document skills plus `coding`, `planning`, `debugging`, `research`, `review`, `security`, `frontend`, and `document` recipes.
 
-Recipes never supply product prompts or domain policy. A product still owns its instructions, scope, persistence, evidence rules, and approval experience. HTTP redirects are returned rather than followed automatically, and browser tools require a host controller plus an explicit origin allowlist.
+Recipes never supply product prompts or domain policy. A product still owns its instructions, scope, persistence, evidence rules, and approval experience. Read-only recipes do not gain mutation authority; guarded recipes still require explicit host decisions. HTTP redirects are returned rather than followed automatically, and browser tools require a host controller plus an explicit origin allowlist.
 
 ## Governed tool phases
 

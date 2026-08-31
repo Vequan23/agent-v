@@ -19,6 +19,7 @@ import {
 import { builtInRuntimes, type LocalRuntimeDefinition } from "./definitions.js";
 import { classifyProcessFailure, parseRuntimeOutput } from "./parsing.js";
 import { runRuntimeProcess, type RuntimeProcessRunner } from "./process.js";
+import { resolveLocalRuntimeCommand, type ResolvedLocalRuntimeCommand } from "./resolution.js";
 import { MemoryRuntimeVerificationStore, type RuntimeVerificationStore } from "./store.js";
 
 export interface LocalCliEngineOptions {
@@ -28,10 +29,7 @@ export interface LocalCliEngineOptions {
   verificationStore?: RuntimeVerificationStore;
   timeoutMs?: number;
   maxOutputBytes?: number;
-}
-
-function versionLine(stdout: string, stderr: string): string {
-  return `${stdout}${stderr}`.trim().split("\n")[0]?.slice(0, 160) || "installed";
+  commandResolver?: (runtime: LocalRuntimeDefinition) => Promise<ResolvedLocalRuntimeCommand | undefined>;
 }
 
 function artifactsText(artifacts: readonly ContextArtifact[] = []): string {
@@ -50,6 +48,8 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
   private readonly verifications: RuntimeVerificationStore;
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
+  private readonly commandResolver: (runtime: LocalRuntimeDefinition) => Promise<ResolvedLocalRuntimeCommand | undefined>;
+  private readonly resolvedCommands = new Map<string, ResolvedLocalRuntimeCommand>();
 
   constructor(options: LocalCliEngineOptions = {}) {
     const runtimes = options.runtimes ?? builtInRuntimes;
@@ -58,6 +58,7 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
     this.verifications = options.verificationStore ?? new MemoryRuntimeVerificationStore();
     this.timeoutMs = options.timeoutMs ?? 75_000;
     this.maxOutputBytes = options.maxOutputBytes ?? 8 * 1024 * 1024;
+    this.commandResolver = options.commandResolver ?? ((runtime) => resolveLocalRuntimeCommand(runtime, { runner: this.runner }));
     this.descriptor = {
       id: options.id ?? "local-cli",
       name: "Local CLI runtimes",
@@ -75,8 +76,13 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
   async inspect(runtimeId: string): Promise<RuntimeReadiness> {
     const runtime = this.runtime(runtimeId);
     try {
-      const result = await this.runner(runtime.command, runtime.versionArgs, process.cwd(), { timeoutMs: 5_000, maxOutputBytes: 64 * 1024 });
-      const version = versionLine(result.stdout, result.stderr);
+      const resolved = await this.commandResolver(runtime);
+      if (!resolved) {
+        this.resolvedCommands.delete(runtimeId);
+        return { runtimeId, availability: "missing", verification: "not-applicable", detail: `${runtime.name} was not found in PATH or a supported application location.`, failure: { code: "engine-unavailable", message: `${runtime.name} executable was not found.`, retryable: false } };
+      }
+      this.resolvedCommands.set(runtimeId, resolved);
+      const version = resolved.version;
       const stored = await this.verifications.get(runtimeId);
       if (stored?.version === version) return stored;
       return { runtimeId, availability: "installed", verification: "unverified", version, detail: `${runtime.name} is installed but has not passed a bounded readiness probe for this version.` };
@@ -193,7 +199,9 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
         const args = runtime.buildInvocation({ prompt, workspace, outputFile, outputSchemaFile: schemaFile, model: request.runtimeModel, workspaceAccess });
         let processResult;
         try {
-          processResult = await this.runner(runtime.command, args, workspace, { signal: request.abortSignal, timeoutMs: this.timeoutMs, maxOutputBytes: this.maxOutputBytes });
+          const resolved = this.resolvedCommands.get(runtime.id);
+          if (!resolved) throw new AgentVError("engine-unavailable", `${runtime.name} executable was not resolved.`);
+          processResult = await this.runner(resolved.command, [...resolved.argsPrefix, ...args], workspace, { signal: request.abortSignal, timeoutMs: this.timeoutMs, maxOutputBytes: this.maxOutputBytes });
         } catch (error) {
           throw classifyProcessFailure(error);
         }

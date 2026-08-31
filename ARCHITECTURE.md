@@ -81,7 +81,7 @@ Only arithmetic and date/time are registered automatically by the high-level run
 
 The standard approval policy retains only a redacted decision history containing ids, tool name, category, and decision. Tool input and metadata are passed to the host decision callback but are not copied into policy history.
 
-Filesystem containment checks both lexical and canonical paths and refuses symlink escape. Commands never use a shell, inherit only named environment variables, and constrain cwd to the canonical workspace. They still execute with the host user's OS authority and are not represented as a sandbox. HTTP accepts HTTPS or loopback HTTP, requires a host allowlist, rejects URL credentials, bounds the response while streaming, and does not follow redirects automatically. Browser tools require HTTPS or loopback origins and verify the current origin before reads or controls.
+Filesystem containment checks both lexical and canonical paths and refuses symlink escape. Discovery does not follow symlinks, exact multi-file edits validate every target before replacement, moves refuse overwrite, and removal can never target the approved root. Mutations remain approval-gated and carry write or destructive categories. Commands never use a shell, inherit only named environment variables, and constrain cwd to the canonical workspace. They still execute with the host user's OS authority and are not represented as a sandbox. HTTP accepts HTTPS or loopback HTTP, requires a host allowlist, rejects URL credentials, bounds the response while streaming, and does not follow redirects automatically. Browser tools require HTTPS or loopback origins and verify the current origin before reads or controls; evidence capabilities such as console capture, screenshots, and waits are registered only when implemented by the host controller.
 
 ## Skills and agents
 
@@ -89,7 +89,7 @@ Filesystem containment checks both lexical and canonical paths and refuses symli
 - A **skill** is portable domain guidance plus a tool allowlist and optional evidence artifacts.
 - An **extension** packages tools, skills, and middleware but gains no authority merely by registration.
 
-Bundled operational skills and starter recipes are opt-in composition, not product prompts. Skill permission metadata is enforced before engine execution; skill trust is descriptive and cannot bypass tool permissions or approvals. Coding, research, review, and document recipes supply tool/skill sets and conservative step limits while requiring the product to supply instructions.
+Bundled operational skills and starter recipes are opt-in composition, not product prompts. Skill permission metadata is enforced before engine execution; skill trust is descriptive and cannot bypass tool permissions or approvals. Coding, planning, debugging, research, review, security, frontend, and document recipes supply tool/skill sets and conservative step limits while requiring the product to supply instructions. Planning, review, and security are read-only compositions; coding, debugging, frontend, research, and document capabilities remain constrained by their registered tools and host approval policy.
 
 ## High-level runtime factory
 
@@ -142,6 +142,9 @@ The Node implementation uses private atomic JSON files and a serialized append-o
 Local coding agents are fallible external systems:
 
 - installed, authenticated/verified, and runnable are distinct states;
+- a desktop chat application and a coding CLI are distinct installations;
+- command discovery uses ordered, identifiable argv candidates and never invokes a shell;
+- model discovery is harness-owned: live catalogs where supported and explicit aliases/configuration otherwise;
 - readiness belongs to an executable version and expires when that version changes;
 - execution has time and output bounds and closes stdin immediately;
 - schema/output files are private and temporary;
@@ -149,7 +152,7 @@ Local coding agents are fallible external systems:
 - unstructured or schema-invalid output is rejected and can receive one bounded repair attempt;
 - safe failure categories are emitted without persisting raw diagnostics.
 
-Codex supports enforced read-only and workspace-write modes. OpenCode currently advertises workspace-write only. Claude Code advertises read-only only. Cursor remains discoverable but does not advertise structured output, so the engine refuses to run it through the structured contract.
+Codex supports enforced read-only and workspace-write modes. OpenCode currently advertises workspace-write only. Claude Code advertises read-only operation through Plan mode. Cursor supports schema-bound execution and enforced read-only operation through Ask mode. The inventory reports authentication, discovered models, application presence, and update state without conflating those facts with live readiness.
 
 Ollama is a model runtime rather than a coding CLI and therefore lives in its own optional adapter. It verifies the native version and tags endpoints, confirms the requested model is installed, and delegates model/tool protocol behavior to the AI SDK 7-compatible `ai-sdk-ollama` provider. Products that do not use Ollama do not load or require that dependency.
 

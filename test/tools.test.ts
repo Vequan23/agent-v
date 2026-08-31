@@ -91,6 +91,9 @@ test("browser tools verify the current origin before reads and controls", async 
   const controller: BrowserController = {
     async currentUrl() { return currentUrl; },
     async snapshot() { return { title: "Example" }; },
+    async consoleMessages() { return { messages: [{ level: "error", text: "Example failure" }] }; },
+    async screenshot() { return { artifactId: "screenshot-1" }; },
+    async wait(target, options) { return { target, timeoutMs: options?.timeoutMs ?? 0 }; },
     async navigate(url) { currentUrl = url; return { url }; },
     async click(target) { return { target }; },
     async type(target, value) { return { target, value }; },
@@ -98,6 +101,13 @@ test("browser tools verify the current origin before reads and controls", async 
   const tools = createBrowserTools({ controller, allowedOrigins: ["https://example.com"] });
   const snapshot = tools.find((tool) => tool.name === standardToolNames.browserSnapshot)!;
   assert.deepEqual(await snapshot.execute(snapshot.input.parse({}), context), { title: "Example" });
+  const consoleEvidence = tools.find((tool) => tool.name === standardToolNames.browserConsole)!;
+  assert.equal(consoleEvidence.requiresApproval, false);
+  assert.deepEqual(await consoleEvidence.execute(consoleEvidence.input.parse({}), context), { messages: [{ level: "error", text: "Example failure" }] });
+  const screenshot = tools.find((tool) => tool.name === standardToolNames.browserScreenshot)!;
+  assert.deepEqual(await screenshot.execute(screenshot.input.parse({}), context), { artifactId: "screenshot-1" });
+  const wait = tools.find((tool) => tool.name === standardToolNames.browserWait)!;
+  assert.deepEqual(await wait.execute(wait.input.parse({ target: "main", timeoutMs: 1_000 }), context), { target: "main", timeoutMs: 1_000 });
   const navigate = tools.find((tool) => tool.name === standardToolNames.browserNavigate)!;
   assert.equal(navigate.approvalCategory, "browser");
   assert.throws(() => navigate.input.parse({ url: "https://other.example/path" }), /not allowed/);

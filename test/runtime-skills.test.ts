@@ -16,6 +16,10 @@ test("starter recipes remain product-owned compositions with stable operational 
   assert.equal(agent.instructions, "Review the supplied project for the product-specific concern.");
   assert.deepEqual(agent.skills, builtInAgentRecipes.review.skills);
   assert.ok(agent.tools.includes("read-text"));
+  assert.ok(agent.tools.includes("find-files"));
+  assert.ok(builtInAgentRecipes.debugging.tools.includes("run-command"));
+  assert.ok(builtInAgentRecipes.frontend.tools.includes("browser-console"));
+  assert.ok(builtInAgentRecipes.security.tools.includes("git-show"));
   assert.equal(builtInAgentSkills.workspaceFiles.trust, "bundled");
 });
 test("high-level runtime factory supplies safe pure tools and a deny-by-default approval policy", async () => {

@@ -6,6 +6,8 @@ import { builtInRuntimes } from "../src/adapters/local-cli/index.ts";
 import { AiSdkToolAgentEngine } from "../src/adapters/ai-sdk/index.ts";
 import { builtInModelProviders } from "../src/adapters/providers/index.ts";
 import { loadSkillPackage } from "../src/node/index.ts";
+import { builtInAgentRecipes } from "../src/skills/index.ts";
+import { standardToolNames } from "../src/tools/index.ts";
 import { MockLanguageModelV4 } from "ai/test";
 
 interface CompatibilityManifest {
@@ -13,7 +15,7 @@ interface CompatibilityManifest {
   adapters: {
     "ai-sdk": { capabilities: string[] };
     providers: { providers: Record<string, string> };
-    "standard-tools": { approvalPolicy: string };
+    "standard-tools": { approvalPolicy: string; tools: string[] };
     "starter-recipes": { recipes: string[] };
     "local-cli": {
       runtimes: Record<string, { strategy: string; capabilities: string[] }>;
@@ -33,7 +35,8 @@ test("compatibility metadata matches the executable adapter definitions", async 
     Object.fromEntries(builtInModelProviders.map((provider) => [provider.id, provider.adapterStrategy])),
   );
   assert.equal(manifest.adapters["standard-tools"].approvalPolicy, "deny-by-default");
-  assert.deepEqual(manifest.adapters["starter-recipes"].recipes, ["coding", "research", "review", "document"]);
+  assert.deepEqual(manifest.adapters["standard-tools"].tools, Object.values(standardToolNames));
+  assert.deepEqual(manifest.adapters["starter-recipes"].recipes, Object.keys(builtInAgentRecipes));
   for (const runtime of builtInRuntimes) {
     const declared = manifest.adapters["local-cli"].runtimes[runtime.id];
     assert.ok(declared, `${runtime.id} is missing from compatibility.json`);
