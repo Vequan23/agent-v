@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defineOutput, localExecutionScope, type ToolExecutionContext } from "../src/core/index.ts";
+import { defineOutput, localExecutionScope, redactToolEventInput, type ToolExecutionContext } from "../src/core/index.ts";
 import {
   createBrowserTools,
   createCalculatorTool,
@@ -20,6 +20,24 @@ const context: ToolExecutionContext = {
   scope: localExecutionScope("tools"),
   artifacts: [],
 };
+
+test("redacts secret-bearing and content-bearing tool arguments before event persistence", () => {
+  const redacted = redactToolEventInput({
+    path: "src/config.ts",
+    content: "const token = 'sk-example-super-secret-value';",
+    apiKey: "sk-example-super-secret-value",
+    command: "curl https://example.com?token=secret --authorization Bearer-secret",
+    edits: [{ find: "old", replace: "new" }],
+  });
+  assert.deepEqual(redacted, {
+    path: "src/config.ts",
+    content: "[CONTENT OMITTED: 46 chars]",
+    apiKey: "[REDACTED]",
+    command: "curl https://example.com?token=[REDACTED] --authorization [REDACTED]",
+    edits: [{ find: "[CONTENT OMITTED: 3 chars]", replace: "[CONTENT OMITTED: 3 chars]" }],
+  });
+  assert.doesNotMatch(JSON.stringify(redacted), /super-secret|Bearer-secret/);
+});
 
 test("pure tools calculate, report deterministic time, and validate registered contracts", async () => {
   const calculator = createCalculatorTool();

@@ -82,6 +82,12 @@ function jsonMcpServer(input: RuntimeMcpInvocation) {
   };
 }
 
+function tomlInlineStringMap(values: Readonly<Record<string, string>>): string {
+  return `{ ${Object.entries(values)
+    .map(([key, value]) => `${JSON.stringify(key)} = ${JSON.stringify(value)}`)
+    .join(", ")} }`;
+}
+
 function cursorCandidates(platform: NodeJS.Platform, homeDirectory: string, env: NodeJS.ProcessEnv): LocalRuntimeCommandCandidate[] {
   const candidates: LocalRuntimeCommandCandidate[] = [
     { command: "agent", source: "path", identifyArgs: ["--help"], identifyIncludes: "Cursor Agent" },
@@ -159,7 +165,7 @@ export function createBuiltInRuntimes(host: BuiltInRuntimeHost = {}): readonly L
       const server = jsonMcpServer(input.mcp);
       const command = JSON.stringify(server.command);
       const serverArgs = JSON.stringify(server.args);
-      const environment = JSON.stringify(server.env);
+      const environment = tomlInlineStringMap(server.env);
       return {
         args: [
           args[0]!,
@@ -174,6 +180,7 @@ export function createBuiltInRuntimes(host: BuiltInRuntimeHost = {}): readonly L
           "-c", `mcp_servers.${input.mcp.serverName}.command=${command}`,
           "-c", `mcp_servers.${input.mcp.serverName}.args=${serverArgs}`,
           "-c", `mcp_servers.${input.mcp.serverName}.env=${environment}`,
+          "-c", `mcp_servers.${input.mcp.serverName}.default_tools_approval_mode="approve"`,
           ...args.slice(1),
         ],
       };

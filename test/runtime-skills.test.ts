@@ -37,7 +37,7 @@ test("high-level runtime factory supplies safe pure tools and a deny-by-default 
   assert.equal(await created.approvalPolicy.decide({
     id: "approval",
     runId: "run",
-    toolName: "write-text",
+    toolName: "create-text",
     input: {},
     reason: "write",
     category: "write",

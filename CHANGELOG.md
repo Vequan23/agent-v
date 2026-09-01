@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add read-before-edit content stamps, stale-read rejection, line-numbered pagination, richer bounded search, and create-only files to the standard workspace tools.
+- Add background command handles, polling, cancellation, caller deadlines, persistent run cwd, interactive-command rejection, and bounded head-and-tail output.
+- Add host-declared post-edit verification checks with approval disclosure and structured receipts.
+- Add provider-neutral context accounting, automatic disclosed compaction, continuity records, context events, and honest unavailable-cost reporting.
+- Add a focused harness conformance suite covering real workspace mutation, automatic verification, and background process lifecycle.
+- Redact credential and content-bearing tool arguments before event persistence, and add an opt-in policy that rejects high-confidence credential material in new file content.
+- Serialize Codex MCP environment values as a TOML inline map, restoring governed host-tool runs that previously failed during CLI configuration parsing.
+- Mark only the ephemeral Vraxis MCP server's tools as locally approved in Codex, leaving the Vraxis host approval policy as the sole user-facing authority while native tools remain disabled and read-only.
+- Treat read-only workspace access as a filesystem boundary rather than a ban on separately approval-gated host browser or network tools.
+- Classify rejected ephemeral runtime configuration with a safe, actionable failure instead of collapsing it into a generic process-exit message.
+
 ## 0.10.0
 
 - Add declarative official install, authentication, and update actions to local harness inventory without executing commands, opening URLs, or weakening host approval policy.

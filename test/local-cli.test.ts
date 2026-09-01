@@ -58,6 +58,18 @@ test("recognizes authentication failure from runtime error output", () => {
   assert.equal(classifyProcessFailure(failure).code, "authentication-required");
 });
 
+test("classifies rejected ephemeral MCP configuration without exposing raw diagnostics", () => {
+  const failure = Object.assign(new Error("Command failed: codex exec"), {
+    code: 1,
+    stdout: "",
+    stderr: "Error loading config.toml: invalid type: string, expected a map in mcp_servers.vraxis.env",
+  });
+  const classified = classifyProcessFailure(failure);
+  assert.equal(classified.code, "configuration-invalid");
+  assert.equal(classified.message, "The runtime rejected its ephemeral tool configuration. Update agent-v or choose a supported runtime version.");
+  assert.doesNotMatch(classified.message, /config\.toml|mcp_servers/);
+});
+
 for (const runtimeId of ["opencode", "claude-code", "cursor"] as const) {
   test(`${runtimeId} receives the actual JSON Schema in its prompt`, async () => {
     let receivedPrompt = "";
@@ -263,13 +275,20 @@ test("Codex receives per-run MCP configuration without changing global config", 
   });
   const output = defineOutput({ name: "ok", jsonSchema: { type: "object" }, parse: () => ({ ok: true }) });
   await engine.run({ runtimeId: "codex", scope: localExecutionScope("mcp"), input: { prompt: "Use host state." }, output, tools: [tool] });
+  assert.equal(runArgs[0], "exec");
   assert.ok(runArgs.includes("-c"));
   assert.ok(runArgs.includes("--ignore-user-config"));
   assert.ok(runArgs.includes("shell_tool"));
   assert.ok(runArgs.includes("unified_exec"));
   assert.ok(runArgs.some((arg) => arg.startsWith("mcp_servers.vraxis.command=")));
-  assert.ok(runArgs.some((arg) => arg.startsWith("mcp_servers.vraxis.env=") && arg.includes("AGENT_V_MCP_DESCRIPTOR")));
+  const environment = runArgs.find((arg) => arg.startsWith("mcp_servers.vraxis.env="));
+  assert.ok(environment?.includes("AGENT_V_MCP_DESCRIPTOR"));
+  assert.match(environment!, /^mcp_servers\.vraxis\.env=\{ .* = .* \}$/);
+  assert.doesNotMatch(environment!, /:/);
+  assert.ok(runArgs.includes('mcp_servers.vraxis.default_tools_approval_mode="approve"'));
   assert.match(runArgs.at(-1) ?? "", /Host tools available through the vraxis MCP server: host-read/);
+  assert.match(runArgs.at(-1) ?? "", /Native workspace access is read-only/);
+  assert.match(runArgs.at(-1) ?? "", /approved browser, network, or other external actions/);
 });
 
 test("Claude Build removes every native tool and routes writes through the host MCP bridge", async () => {

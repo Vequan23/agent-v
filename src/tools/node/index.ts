@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
@@ -108,6 +109,9 @@ export interface FilesystemToolOptions {
   maxSearchFiles?: number;
   maxSearchResults?: number;
   ignoredDirectories?: readonly string[];
+  readLineLimit?: number;
+  /** Reject high-confidence credential material in newly written text. Disabled unless the host opts in. */
+  rejectPotentialSecrets?: boolean;
 }
 
 export async function createFilesystemTools(options: FilesystemToolOptions): Promise<readonly AgentTool[]> {
@@ -116,6 +120,29 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
   const maxSearchFiles = options.maxSearchFiles ?? 5_000;
   const maxSearchResults = options.maxSearchResults ?? 200;
   const ignored = new Set(options.ignoredDirectories ?? [".git", "node_modules"]);
+  const readLineLimit = options.readLineLimit ?? 400;
+  const assertSafeNewContent = (content: string) => {
+    if (!options.rejectPotentialSecrets) return;
+    const potentialSecret = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:sk|gh[opusr]|xox[baprs])[-_][A-Za-z0-9_-]{16,}\b|\bAIza[0-9A-Za-z_-]{24,}\b|\b(?:api[-_]?key|access[-_]?token|client[-_]?secret|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{20,}/i;
+    if (potentialSecret.test(content)) throw new TypeError("Potential credential material was rejected. Store the secret in the host credential store and write only its reference or environment-variable name.");
+  };
+  if (!Number.isInteger(readLineLimit) || readLineLimit < 1 || readLineLimit > 5_000) {
+    throw new TypeError("readLineLimit must be an integer between 1 and 5000.");
+  }
+  const observations = new Map<string, Map<string, string>>();
+  const observationKey = (context: { sessionId?: string; runId?: string; toolCallId?: string }) => context.sessionId ?? context.runId ?? context.toolCallId ?? "unscoped";
+  const stamp = (content: string) => `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  const remember = (context: { sessionId?: string; runId?: string; toolCallId?: string }, path: string, value: string) => {
+    const key = observationKey(context);
+    const files = observations.get(key) ?? new Map<string, string>();
+    files.set(path, stamp(value));
+    observations.set(key, files);
+  };
+  const requireCurrentRead = async (context: { sessionId?: string; runId?: string; toolCallId?: string }, displayPath: string, file: string, content: string) => {
+    const observed = observations.get(observationKey(context))?.get(file);
+    if (!observed) throw new TypeError(`Read ${displayPath} before editing it in this session.`);
+    if (observed !== stamp(content)) throw new TypeError(`${displayPath} changed after it was read. Re-read the file before editing.`);
+  };
   const objectOutput = defineOutput({
     name: "workspace-tool-output",
     jsonSchema: { type: "object" },
@@ -212,30 +239,100 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
     }),
     defineTool({
       name: standardToolNames.readText,
-      version: "1.0.0",
-      description: "Read one bounded UTF-8 text file inside the approved workspace root.",
-      input: pathInput("read-text-input"),
+      version: "2.0.0",
+      description: "Use before editing to read a line-numbered slice of one UTF-8 workspace file; continue with nextOffset when truncated.",
+      input: defineOutput({
+        name: "read-text-input",
+        jsonSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            offset: { type: "number", description: "One-based first line. Defaults to 1." },
+            limit: { type: "number", description: `Maximum lines to return. Defaults to ${readLineLimit}.` },
+          },
+          required: ["path"],
+          additionalProperties: false,
+        },
+        parse(value) {
+          const input = record(value, "Read text input");
+          const offset = input.offset === undefined ? 1 : input.offset;
+          const limit = input.limit === undefined ? readLineLimit : input.limit;
+          if (!Number.isInteger(offset) || (offset as number) < 1) throw new TypeError("offset must be a positive one-based line number.");
+          if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > 5_000) throw new TypeError("limit must be an integer between 1 and 5000.");
+          return { path: stringField(value, "path"), offset: offset as number, limit: limit as number };
+        },
+      }),
       output: objectOutput,
       risk: "read",
       sideEffect: "none",
       requiredPermissions: ["filesystem:read"],
       requiresApproval: false,
       timeoutMs: 5_000,
-      async execute({ path }) {
+      async execute({ path, offset, limit }, context) {
         const file = await workspace.existing(path);
-        return { path, content: await readBoundedText(file) };
+        const content = await readBoundedText(file);
+        remember(context, file, content);
+        if (!content.length) return { path, state: "empty", content: "", offset: 1, returnedLines: 0, totalLines: 0, truncated: false, stamp: stamp(content) };
+        const lines = content.split(/\r?\n/);
+        const start = Math.min(offset - 1, lines.length);
+        const selected = lines.slice(start, start + limit);
+        const nextOffset = start + selected.length < lines.length ? start + selected.length + 1 : undefined;
+        return {
+          path,
+          state: "ok",
+          content: selected.map((line, index) => `${start + index + 1}: ${line}`).join("\n"),
+          offset: start + 1,
+          returnedLines: selected.length,
+          totalLines: lines.length,
+          truncated: nextOffset !== undefined,
+          ...(nextOffset === undefined ? {} : { nextOffset, continuation: `Read ${path} again with offset ${nextOffset}.` }),
+          stamp: stamp(content),
+        };
       },
     }),
     defineTool({
       name: standardToolNames.searchText,
-      version: "1.0.0",
-      description: "Search bounded workspace text files without following symlinks.",
+      version: "2.0.0",
+      description: "Use to search workspace text with a literal or regular expression, optional file glob, result mode, and bounded context.",
       input: defineOutput({
         name: "search-text-input",
-        jsonSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" } }, required: ["query"], additionalProperties: false },
+        jsonSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string" },
+            path: { type: "string" },
+            regex: { type: "boolean" },
+            caseSensitive: { type: "boolean" },
+            glob: { type: "string" },
+            mode: { type: "string", enum: ["lines", "paths", "count"] },
+            contextLines: { type: "number", minimum: 0, maximum: 5 },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
         parse(value) {
           const input = record(value, "Search input");
-          return { query: stringField(value, "query"), path: input.path === undefined ? "." : stringField(value, "path") };
+          if (input.regex !== undefined && typeof input.regex !== "boolean") throw new TypeError("regex must be a boolean.");
+          if (input.caseSensitive !== undefined && typeof input.caseSensitive !== "boolean") throw new TypeError("caseSensitive must be a boolean.");
+          if (input.mode !== undefined && !["lines", "paths", "count"].includes(String(input.mode))) throw new TypeError("mode must be lines, paths, or count.");
+          const contextLines = input.contextLines === undefined ? 0 : input.contextLines;
+          if (!Number.isInteger(contextLines) || (contextLines as number) < 0 || (contextLines as number) > 5) throw new TypeError("contextLines must be an integer between 0 and 5.");
+          const glob = input.glob === undefined ? undefined : stringField(value, "glob");
+          if (glob) globPattern(glob);
+          const query = stringField(value, "query");
+          if (query.length > 2_000) throw new TypeError("query must not exceed 2000 characters.");
+          if (input.regex === true) {
+            try { new RegExp(query, input.caseSensitive === true ? "u" : "iu"); } catch (error) { throw new TypeError(`query is not a valid regular expression: ${(error as Error).message}`); }
+          }
+          return {
+            query,
+            path: input.path === undefined ? "." : stringField(value, "path"),
+            regex: input.regex === true,
+            caseSensitive: input.caseSensitive === true,
+            mode: (input.mode ?? "lines") as "lines" | "paths" | "count",
+            contextLines: contextLines as number,
+            glob,
+          };
         },
       }),
       output: objectOutput,
@@ -244,47 +341,81 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
       requiredPermissions: ["filesystem:read"],
       requiresApproval: false,
       timeoutMs: 15_000,
-      async execute({ query, path }) {
+      async execute({ query, path, regex, caseSensitive, mode, contextLines, glob }) {
         const start = await workspace.existing(path);
-        const results: { path: string; line: number; text: string }[] = [];
+        const results: { path: string; line?: number; text?: string; before?: string[]; after?: string[]; count?: number }[] = [];
+        const counts = new Map<string, number>();
+        const matchedPaths = new Set<string>();
+        const matcher = regex
+          ? new RegExp(query, caseSensitive ? "u" : "iu")
+          : undefined;
+        const fileMatcher = glob ? globPattern(glob) : undefined;
         let files = 0;
+        let capped = false;
+        const matches = (line: string) => matcher ? matcher.test(line) : caseSensitive ? line.includes(query) : line.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+        const searchFile = async (file: string) => {
+          const displayPath = slashPath(relative(workspace.rootPath, file));
+          if (fileMatcher && !fileMatcher.test(displayPath)) return;
+          files += 1;
+          const info = await stat(file);
+          if (info.size > maxFileBytes) return;
+          const content = await readFile(file, "utf8").catch(() => "");
+          if (content.includes("\0")) return;
+          const lines = content.split(/\r?\n/);
+          let count = 0;
+          for (const [index, line] of lines.entries()) {
+            if (!matches(line)) continue;
+            count += 1;
+            matchedPaths.add(displayPath);
+            if (mode === "lines" && results.length < maxSearchResults) {
+              results.push({
+                path: displayPath,
+                line: index + 1,
+                text: line.slice(0, 500),
+                ...(contextLines ? { before: lines.slice(Math.max(0, index - contextLines), index), after: lines.slice(index + 1, index + 1 + contextLines) } : {}),
+              });
+            }
+            if (mode === "lines" && results.length >= maxSearchResults) { capped = true; break; }
+          }
+          if (count) counts.set(displayPath, count);
+        };
         const walk = async (directory: string): Promise<void> => {
           for (const entry of await readdir(directory, { withFileTypes: true })) {
-            if (results.length >= maxSearchResults || files >= maxSearchFiles) return;
+            if (capped || files >= maxSearchFiles || matchedPaths.size >= maxSearchResults) { capped = true; return; }
             if (entry.isSymbolicLink() || (entry.isDirectory() && ignored.has(entry.name))) continue;
             const child = resolve(directory, entry.name);
             if (entry.isDirectory()) { await walk(child); continue; }
             if (!entry.isFile()) continue;
-            files += 1;
-            const info = await stat(child);
-            if (info.size > maxFileBytes) continue;
-            const content = await readFile(child, "utf8").catch(() => "");
-            if (content.includes("\0")) continue;
-            for (const [index, line] of content.split(/\r?\n/).entries()) {
-              if (line.includes(query)) results.push({ path: relative(workspace.rootPath, child), line: index + 1, text: line.slice(0, 500) });
-              if (results.length >= maxSearchResults) break;
-            }
+            await searchFile(child);
           }
         };
         const info = await stat(start);
         if (info.isDirectory()) await walk(start);
-        else {
-          files = 1;
-          const content = await readBoundedText(start);
-          for (const [index, line] of content.split(/\r?\n/).entries()) {
-            if (line.includes(query)) results.push({ path: relative(workspace.rootPath, start), line: index + 1, text: line.slice(0, 500) });
-            if (results.length >= maxSearchResults) break;
-          }
-        }
-        return { query, path, filesSearched: files, results, truncated: files >= maxSearchFiles || results.length >= maxSearchResults };
+        else await searchFile(start);
+        const selected = mode === "paths"
+          ? [...matchedPaths].sort().slice(0, maxSearchResults).map((matchedPath) => ({ path: matchedPath }))
+          : mode === "count"
+            ? [...counts].sort(([left], [right]) => left.localeCompare(right)).slice(0, maxSearchResults).map(([matchedPath, count]) => ({ path: matchedPath, count }))
+            : results;
+        const truncated = capped || files >= maxSearchFiles || matchedPaths.size > maxSearchResults;
+        return {
+          query,
+          path,
+          mode,
+          filesSearched: files,
+          results: selected,
+          matchCount: [...counts.values()].reduce((total, count) => total + count, 0),
+          truncated,
+          ...(truncated ? { continuation: "Narrow the path or glob, or use a more specific query." } : {}),
+        };
       },
     }),
     defineTool({
-      name: standardToolNames.writeText,
-      version: "1.0.0",
-      description: "Create or replace one UTF-8 text file inside the approved workspace root.",
+      name: standardToolNames.createText,
+      version: "2.0.0",
+      description: "Use only to create a new UTF-8 workspace file; it fails rather than overwrite an existing path.",
       input: defineOutput({
-        name: "write-text-input",
+        name: "create-text-input",
         jsonSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"], additionalProperties: false },
         parse(value) { return { path: stringField(value, "path"), content: stringField(value, "content", { allowEmpty: true }) }; },
       }),
@@ -294,25 +425,27 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
       requiredPermissions: ["filesystem:write"],
       requiresApproval: true,
       approvalCategory: "write",
-      approvalReason: "Allow this agent to create or replace a file inside the approved workspace.",
+      approvalReason: "Allow this agent to create a new file inside the approved workspace.",
       timeoutMs: 5_000,
-      async execute({ path, content }) {
+      async execute({ path, content }, context) {
+        assertSafeNewContent(content);
         if (new TextEncoder().encode(content).byteLength > maxFileBytes) throw new RangeError(`Content exceeds the ${maxFileBytes} byte write limit.`);
         const file = await workspace.writable(path);
         const existing = await lstat(file).catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? undefined : Promise.reject(error));
-        if (existing && !existing.isFile()) throw new TypeError("Write path must identify a regular file or a new file.");
+        if (existing) throw new TypeError(`${path} already exists. Read it and use apply-text-edits to modify it.`);
         const temporary = resolve(dirname(file), `.${basename(file)}.${crypto.randomUUID()}.tmp`);
-        const mode = existing ? existing.mode & 0o777 : 0o600;
+        const mode = 0o600;
         await writeFile(temporary, content, { encoding: "utf8", mode });
         await chmod(temporary, mode);
         await rename(temporary, file);
-        return { path, bytes: new TextEncoder().encode(content).byteLength };
+        remember(context, file, content);
+        return { path, state: "created", bytes: new TextEncoder().encode(content).byteLength, stamp: stamp(content) };
       },
     }),
     defineTool({
       name: standardToolNames.applyTextEdits,
-      version: "1.0.0",
-      description: "Apply exact, deterministic text replacements to one workspace file.",
+      version: "2.0.0",
+      description: "Use after read-text to apply exact replacements to one unchanged workspace file; zero or ambiguous matches fail closed.",
       input: defineOutput({
         name: "apply-text-edits-input",
         jsonSchema: {
@@ -345,14 +478,16 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
       approvalCategory: "write",
       approvalReason: "Allow this agent to apply reviewed text edits inside the approved workspace.",
       timeoutMs: 5_000,
-      async execute({ path, edits }) {
+      async execute({ path, edits }, context) {
+        for (const edit of edits) assertSafeNewContent(edit.replace);
         const file = await workspace.existing(path);
         const info = await stat(file);
         let content = await readBoundedText(file);
+        await requireCurrentRead(context, path, file, content);
         for (const edit of edits) {
           const occurrences = content.split(edit.find).length - 1;
-          if (occurrences === 0) throw new TypeError("An expected edit target was not found.");
-          if (!edit.all && occurrences !== 1) throw new TypeError("An edit target is ambiguous; set all only when every occurrence should change.");
+          if (occurrences === 0) throw new TypeError(`Edit target was not found in ${path}: ${JSON.stringify(edit.find.slice(0, 200))}.`);
+          if (!edit.all && occurrences !== 1) throw new TypeError(`Edit target matched ${occurrences} times in ${path}; set all only when every occurrence should change.`);
           content = edit.all ? content.split(edit.find).join(edit.replace) : content.replace(edit.find, edit.replace);
         }
         if (new TextEncoder().encode(content).byteLength > maxFileBytes) throw new RangeError(`Edited content exceeds the ${maxFileBytes} byte limit.`);
@@ -361,13 +496,14 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
         await writeFile(temporary, content, { encoding: "utf8", mode });
         await chmod(temporary, mode);
         await rename(temporary, file);
-        return { path, editsApplied: edits.length, bytes: new TextEncoder().encode(content).byteLength };
+        remember(context, file, content);
+        return { path, editsApplied: edits.length, bytes: new TextEncoder().encode(content).byteLength, stamp: stamp(content) };
       },
     }),
     defineTool({
       name: standardToolNames.applyWorkspacePatch,
-      version: "1.0.0",
-      description: "Apply exact reviewed replacements across multiple existing workspace text files.",
+      version: "2.0.0",
+      description: "Use after reading every target to atomically apply exact replacements across unchanged workspace files.",
       input: defineOutput({
         name: "apply-workspace-patch-input",
         jsonSchema: {
@@ -419,16 +555,18 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
       approvalCategory: "write",
       approvalReason: "Allow this agent to apply reviewed edits across workspace files.",
       timeoutMs: 15_000,
-      async execute({ files }) {
+      async execute({ files }, context) {
+        for (const file of files) for (const edit of file.edits) assertSafeNewContent(edit.replace);
         const prepared = await Promise.all(files.map(async ({ path, edits }) => {
           const file = await workspace.existing(path);
           const info = await stat(file);
           let before = await readBoundedText(file);
+          await requireCurrentRead(context, path, file, before);
           let after = before;
           for (const edit of edits) {
             const occurrences = after.split(edit.find).length - 1;
-            if (occurrences === 0) throw new TypeError(`An expected edit target was not found in ${path}.`);
-            if (!edit.all && occurrences !== 1) throw new TypeError(`An edit target is ambiguous in ${path}.`);
+            if (occurrences === 0) throw new TypeError(`Edit target was not found in ${path}: ${JSON.stringify(edit.find.slice(0, 200))}.`);
+            if (!edit.all && occurrences !== 1) throw new TypeError(`Edit target matched ${occurrences} times in ${path}; set all only when every occurrence should change.`);
             after = edit.all ? after.split(edit.find).join(edit.replace) : after.replace(edit.find, edit.replace);
           }
           if (new TextEncoder().encode(after).byteLength > maxFileBytes) throw new RangeError(`Edited content for ${path} exceeds the ${maxFileBytes} byte limit.`);
@@ -457,7 +595,11 @@ export async function createFilesystemTools(options: FilesystemToolOptions): Pro
         } finally {
           await Promise.all(prepared.map((item) => rm(item.temporary, { force: true }).catch(() => undefined)));
         }
-        return { files: prepared.map((item) => ({ path: item.path, editsApplied: item.edits })), editsApplied: prepared.reduce((total, item) => total + item.edits, 0) };
+        for (const item of prepared) remember(context, item.file, item.after);
+        return {
+          files: prepared.map((item) => ({ path: item.path, editsApplied: item.edits, stamp: stamp(item.after) })),
+          editsApplied: prepared.reduce((total, item) => total + item.edits, 0),
+        };
       },
     }),
     defineTool({
@@ -548,6 +690,65 @@ export interface DevelopmentToolOptions {
   environment?: Readonly<Record<string, string>>;
   maxOutputBytes?: number;
   timeoutMs?: number;
+  postEditChecks?: readonly PostEditCheck[];
+}
+
+export interface PostEditCheck {
+  name: string;
+  command: string;
+  args?: readonly string[];
+  cwd?: string;
+  timeoutMs?: number;
+  blocking?: boolean;
+}
+
+interface CapturedOutput {
+  head: string;
+  tail: string;
+  full?: string;
+  bytes: number;
+}
+
+interface BackgroundCommand {
+  handle: string;
+  child: ChildProcessWithoutNullStreams;
+  command: string;
+  args: readonly string[];
+  cwd: string;
+  startedAt: number;
+  stdout: CapturedOutput;
+  stderr: CapturedOutput;
+  exitCode?: number;
+  signal?: string;
+  completedAt?: number;
+  timedOut: boolean;
+  timeout: NodeJS.Timeout;
+}
+
+function captureOutput(current: CapturedOutput, chunk: string, maximumBytes: number): void {
+  const text = String(chunk);
+  current.bytes += Buffer.byteLength(text);
+  if (current.full !== undefined) {
+    current.full += text;
+    if (Buffer.byteLength(current.full) > maximumBytes) delete current.full;
+  }
+  const half = Math.max(1, Math.floor(maximumBytes / 2));
+  if (Buffer.byteLength(current.head) < half) current.head = Buffer.from(current.head + text).subarray(0, half).toString("utf8");
+  current.tail = Buffer.from(current.tail + text).subarray(-half).toString("utf8");
+}
+
+function renderedOutput(value: CapturedOutput, maximumBytes: number): { value: string; truncated: boolean } {
+  if (value.bytes <= maximumBytes) return { value: value.full ?? value.head + value.tail, truncated: false };
+  const omitted = value.bytes - Buffer.byteLength(value.head) - Buffer.byteLength(value.tail);
+  return { value: `${value.head}\n[... ${Math.max(omitted, 0)} bytes truncated ...]\n${value.tail}`, truncated: true };
+}
+
+function interactiveCommand(command: string, args: readonly string[]): string | undefined {
+  const executable = basename(command).toLowerCase().replace(/\.exe$/, "");
+  if (["vi", "vim", "nvim", "nano", "less", "more", "top", "htop"].includes(executable)) return `${executable} requires an interactive terminal.`;
+  if (["node", "python", "python3"].includes(executable) && args.length === 0) return `${executable} without a script starts an interactive REPL.`;
+  if (args.includes("-i") || args.includes("--interactive")) return "Interactive command flags are not supported by run-command.";
+  return undefined;
 }
 
 async function execute(command: string, args: readonly string[], options: { cwd: string; signal?: AbortSignal; timeout: number; env?: NodeJS.ProcessEnv; maxBuffer: number }) {
@@ -567,14 +768,26 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
   const maxOutputBytes = options.maxOutputBytes ?? 512_000;
   const timeoutMs = options.timeoutMs ?? 120_000;
   const output = defineOutput({ name: "process-output", jsonSchema: { type: "object" }, parse(value) { return record(value, "Process output") as JsonObject; } });
-  const bounded = (value: string) => value.length > maxOutputBytes ? value.slice(0, maxOutputBytes) : value;
+  const bounded = (value: string) => {
+    const bytes = Buffer.byteLength(value);
+    if (bytes <= maxOutputBytes) return { value, truncated: false };
+    const half = Math.max(1, Math.floor(maxOutputBytes / 2));
+    const head = Buffer.from(value).subarray(0, half).toString("utf8");
+    const tail = Buffer.from(value).subarray(-half).toString("utf8");
+    return { value: `${head}\n[... ${bytes - Buffer.byteLength(head) - Buffer.byteLength(tail)} bytes truncated ...]\n${tail}`, truncated: true };
+  };
+  const workingDirectories = new Map<string, string>();
+  const backgroundCommands = new Map<string, BackgroundCommand>();
+  const contextKey = (context: { sessionId?: string; runId?: string; toolCallId?: string }) => context.sessionId ?? context.runId ?? context.toolCallId ?? "unscoped";
   const environment: NodeJS.ProcessEnv = { ...options.environment };
   for (const key of options.inheritedEnvironment ?? ["PATH", "TMPDIR", "LANG", "LC_ALL", "TERM"]) {
     if (process.env[key] !== undefined) environment[key] = process.env[key];
   }
   const git = async (args: readonly string[], signal?: AbortSignal) => {
     const result = await execute("git", ["-C", workspace.rootPath, ...args], { cwd: workspace.rootPath, signal, timeout: timeoutMs, env: environment, maxBuffer: maxOutputBytes });
-    return { ...result, stdout: bounded(result.stdout), stderr: bounded(result.stderr), truncated: result.stdout.length > maxOutputBytes || result.stderr.length > maxOutputBytes };
+    const stdout = bounded(result.stdout);
+    const stderr = bounded(result.stderr);
+    return { ...result, stdout: stdout.value, stderr: stderr.value, truncated: stdout.truncated || stderr.truncated };
   };
   return [
     defineTool({
@@ -684,13 +897,19 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
     }),
     defineTool({
       name: standardToolNames.runCommand,
-      version: "1.0.0",
-      description: "Run one argument-array command from an explicit host allowlist with cwd constrained to the approved workspace.",
+      version: "2.0.0",
+      description: "Use for an allowlisted non-interactive command; set background for a long-running process and poll it by handle.",
       input: defineOutput({
         name: "run-command-input",
         jsonSchema: {
           type: "object",
-          properties: { command: { type: "string" }, args: { type: "array", items: { type: "string" }, maxItems: 100 }, cwd: { type: "string" } },
+          properties: {
+            command: { type: "string" },
+            args: { type: "array", items: { type: "string" }, maxItems: 100 },
+            cwd: { type: "string" },
+            timeoutMs: { type: "number" },
+            background: { type: "boolean" },
+          },
           required: ["command"],
           additionalProperties: false,
         },
@@ -699,7 +918,18 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
           const command = stringField(value, "command");
           if (!allowedCommands.has(command)) throw new TypeError(`Command ${command} is not in the host allowlist.`);
           if (input.args !== undefined && (!Array.isArray(input.args) || input.args.some((item) => typeof item !== "string") || input.args.length > 100)) throw new TypeError("args must contain at most 100 strings.");
-          return { command, args: (input.args as string[] | undefined) ?? [], cwd: input.cwd === undefined ? "." : stringField(value, "cwd") };
+          if (input.background !== undefined && typeof input.background !== "boolean") throw new TypeError("background must be a boolean.");
+          const requestedTimeout = input.timeoutMs === undefined ? timeoutMs : input.timeoutMs;
+          if (!Number.isInteger(requestedTimeout) || (requestedTimeout as number) < 1_000 || (requestedTimeout as number) > timeoutMs) {
+            throw new TypeError(`timeoutMs must be an integer between 1000 and the ${timeoutMs}ms host ceiling.`);
+          }
+          return {
+            command,
+            args: (input.args as string[] | undefined) ?? [],
+            cwd: input.cwd === undefined ? undefined : stringField(value, "cwd"),
+            timeoutMs: requestedTimeout as number,
+            background: input.background === true,
+          };
         },
       }),
       output,
@@ -710,11 +940,102 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
       approvalCategory: "command",
       approvalReason: "Allow this agent to execute an allowlisted command inside the approved workspace.",
       timeoutMs,
-      async execute({ command, args, cwd }, context) {
-        const workingDirectory = await workspace.existing(cwd);
+      async execute({ command, args, cwd, timeoutMs: commandTimeout, background }, context): Promise<JsonObject> {
+        const interactive = interactiveCommand(command, args);
+        if (interactive) throw new TypeError(`${interactive} Use a non-interactive flag or run it in the user-visible terminal.`);
+        const key = contextKey(context);
+        const selectedCwd = cwd ?? workingDirectories.get(key) ?? ".";
+        const workingDirectory = await workspace.existing(selectedCwd);
         if (!(await stat(workingDirectory)).isDirectory()) throw new TypeError("Command cwd must be a directory.");
-        const result = await execute(command, args, { cwd: workingDirectory, signal: context.abortSignal, timeout: timeoutMs, env: environment, maxBuffer: maxOutputBytes });
-        return { ...result, stdout: bounded(result.stdout), stderr: bounded(result.stderr), truncated: result.stdout.length > maxOutputBytes || result.stderr.length > maxOutputBytes };
+        workingDirectories.set(key, selectedCwd);
+        if (background) {
+          const handle = crypto.randomUUID();
+          const child = spawn(command, [...args], { cwd: workingDirectory, env: environment, stdio: "pipe", shell: false });
+          const processState: BackgroundCommand = {
+            handle,
+            child,
+            command,
+            args,
+            cwd: selectedCwd,
+            startedAt: Date.now(),
+            stdout: { head: "", tail: "", full: "", bytes: 0 },
+            stderr: { head: "", tail: "", full: "", bytes: 0 },
+            timedOut: false,
+            timeout: setTimeout(() => { processState.timedOut = true; child.kill("SIGTERM"); }, commandTimeout),
+          };
+          backgroundCommands.set(handle, processState);
+          child.stdout.on("data", (chunk) => captureOutput(processState.stdout, String(chunk), maxOutputBytes));
+          child.stderr.on("data", (chunk) => captureOutput(processState.stderr, String(chunk), maxOutputBytes));
+          child.once("exit", (exitCode, signal) => {
+            clearTimeout(processState.timeout);
+            processState.exitCode = exitCode ?? undefined;
+            processState.signal = signal ?? undefined;
+            processState.completedAt = Date.now();
+          });
+          context.abortSignal?.addEventListener("abort", () => child.kill("SIGTERM"), { once: true });
+          return { handle, status: "running", command, args: [...args], cwd: selectedCwd, timeoutMs: commandTimeout };
+        }
+        const result = await execute(command, args, { cwd: workingDirectory, signal: context.abortSignal, timeout: commandTimeout, env: environment, maxBuffer: maxOutputBytes * 4 });
+        const stdout = bounded(result.stdout);
+        const stderr = bounded(result.stderr);
+        return { cwd: selectedCwd, stdout: stdout.value, stderr: stderr.value, exitCode: result.exitCode, truncated: stdout.truncated || stderr.truncated };
+      },
+    }),
+    defineTool({
+      name: standardToolNames.pollCommand,
+      version: "1.0.0",
+      description: "Use after a background run-command to read its current status, bounded stdout, bounded stderr, and exit code.",
+      input: defineOutput({
+        name: "poll-command-input",
+        jsonSchema: { type: "object", properties: { handle: { type: "string" } }, required: ["handle"], additionalProperties: false },
+        parse(value) { return { handle: stringField(value, "handle") }; },
+      }),
+      output,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["process:execute"],
+      requiresApproval: false,
+      timeoutMs: 5_000,
+      execute({ handle }) {
+        const processState = backgroundCommands.get(handle);
+        if (!processState) throw new TypeError(`Background command handle was not found: ${handle}`);
+        const stdout = renderedOutput(processState.stdout, maxOutputBytes);
+        const stderr = renderedOutput(processState.stderr, maxOutputBytes);
+        return {
+          handle,
+          status: processState.completedAt === undefined ? "running" : processState.timedOut ? "timeout" : processState.exitCode === 0 ? "success" : "error",
+          command: processState.command,
+          args: [...processState.args],
+          cwd: processState.cwd,
+          stdout: stdout.value,
+          stderr: stderr.value,
+          truncated: stdout.truncated || stderr.truncated,
+          ...(processState.exitCode === undefined ? {} : { exitCode: processState.exitCode }),
+          ...(processState.signal ? { signal: processState.signal } : {}),
+          durationMs: (processState.completedAt ?? Date.now()) - processState.startedAt,
+        };
+      },
+    }),
+    defineTool({
+      name: standardToolNames.stopCommand,
+      version: "1.0.0",
+      description: "Use to stop a background command previously started by this harness instance.",
+      input: defineOutput({
+        name: "stop-command-input",
+        jsonSchema: { type: "object", properties: { handle: { type: "string" } }, required: ["handle"], additionalProperties: false },
+        parse(value) { return { handle: stringField(value, "handle") }; },
+      }),
+      output,
+      risk: "write",
+      sideEffect: "idempotent",
+      requiredPermissions: ["process:execute"],
+      requiresApproval: false,
+      timeoutMs: 5_000,
+      execute({ handle }) {
+        const processState = backgroundCommands.get(handle);
+        if (!processState) throw new TypeError(`Background command handle was not found: ${handle}`);
+        if (processState.completedAt === undefined) processState.child.kill("SIGTERM");
+        return { handle, status: processState.completedAt === undefined ? "stopping" : "stopped" };
       },
     }),
   ];
@@ -723,12 +1044,63 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
 export async function createWorkspaceTools(options: FilesystemToolOptions & Partial<Omit<DevelopmentToolOptions, "rootPath">>): Promise<readonly AgentTool[]> {
   const filesystem = await createFilesystemTools(options);
   if (!options.allowedCommands?.length) return filesystem;
-  return [...filesystem, ...await createDevelopmentTools({
+  const development = await createDevelopmentTools({
     rootPath: options.rootPath,
     allowedCommands: options.allowedCommands,
     inheritedEnvironment: options.inheritedEnvironment,
     environment: options.environment,
     maxOutputBytes: options.maxOutputBytes,
     timeoutMs: options.timeoutMs,
-  })];
+  });
+  if (!options.postEditChecks?.length) return [...filesystem, ...development];
+  const workspace = await BoundedWorkspace.create(options.rootPath);
+  const allowedCommands = new Set(options.allowedCommands);
+  const maximumOutput = options.maxOutputBytes ?? 512_000;
+  const hardTimeout = options.timeoutMs ?? 120_000;
+  const checks = options.postEditChecks.map((check) => {
+    if (!check.name.trim()) throw new TypeError("Post-edit check names must be non-empty.");
+    if (!allowedCommands.has(check.command)) throw new TypeError(`Post-edit check command ${check.command} is not in the host allowlist.`);
+    const timeout = check.timeoutMs ?? hardTimeout;
+    if (!Number.isInteger(timeout) || timeout < 1_000 || timeout > hardTimeout) throw new TypeError(`Post-edit check ${check.name} exceeds the host timeout ceiling.`);
+    return { ...check, args: [...(check.args ?? [])], cwd: check.cwd ?? ".", timeoutMs: timeout, blocking: check.blocking !== false };
+  });
+  const mutationTools = new Set<string>([standardToolNames.createText, standardToolNames.applyTextEdits, standardToolNames.applyWorkspacePatch]);
+  const checkedFilesystem = filesystem.map((tool): AgentTool => {
+    if (!mutationTools.has(tool.name)) return tool;
+    return {
+      ...tool,
+      approvalReason: `${tool.approvalReason ?? "Allow this workspace change."} The host will run ${checks.map((check) => check.name).join(", ")} immediately afterward.`,
+      async execute(input, context) {
+        const output = await tool.execute(input, context) as JsonObject;
+        const verification: JsonObject[] = [];
+        for (const check of checks) {
+          const cwd = await workspace.existing(check.cwd);
+          if (!(await stat(cwd)).isDirectory()) throw new TypeError(`Post-edit check ${check.name} cwd must be a directory.`);
+          const result = await execute(check.command, check.args, {
+            cwd,
+            signal: context.abortSignal,
+            timeout: check.timeoutMs,
+            env: process.env,
+            maxBuffer: maximumOutput * 4,
+          });
+          const bound = (value: string) => {
+            if (Buffer.byteLength(value) <= maximumOutput) return { value, truncated: false };
+            const half = Math.max(1, Math.floor(maximumOutput / 2));
+            const head = Buffer.from(value).subarray(0, half).toString("utf8");
+            const tail = Buffer.from(value).subarray(-half).toString("utf8");
+            return { value: `${head}\n[... output truncated ...]\n${tail}`, truncated: true };
+          };
+          const stdout = bound(result.stdout);
+          const stderr = bound(result.stderr);
+          verification.push({ name: check.name, command: check.command, args: check.args, cwd: check.cwd, exitCode: result.exitCode, stdout: stdout.value, stderr: stderr.value, truncated: stdout.truncated || stderr.truncated });
+          if (check.blocking && result.exitCode !== 0) {
+            const detail = stderr.value.trim() || stdout.value.trim() || `exit code ${result.exitCode}`;
+            throw new TypeError(`Post-edit check ${check.name} failed: ${detail}`);
+          }
+        }
+        return { ...output, verification };
+      },
+    };
+  });
+  return [...checkedFilesystem, ...development];
 }

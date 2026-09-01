@@ -32,6 +32,9 @@ export function classifyProcessFailure(error: unknown): AgentVError {
   if (/\b(?:auth|authentication|authorization|oauth|login|log in|unauthori[sz]ed|credentials?|api[- ]?key|access token|bearer token)\b/.test(authenticationDiagnostic)) {
     return new AgentVError("authentication-required", "The runtime rejected the request because its authentication is not ready.", { cause: error });
   }
+  if (/error loading config\.toml|invalid (?:mcp|configuration)|mcp_servers\..*expected/.test(processDiagnostic)) {
+    return new AgentVError("configuration-invalid", "The runtime rejected its ephemeral tool configuration. Update agent-v or choose a supported runtime version.", { cause: error });
+  }
   if (record.code === "ENOENT") return new AgentVError("engine-unavailable", "The runtime executable is missing or is not on PATH.", { cause: error });
   return new AgentVError("invocation-failed", "The runtime process exited before returning a reviewable result.", { cause: error });
 }

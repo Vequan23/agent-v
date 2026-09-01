@@ -2,6 +2,7 @@ import {
   AgentVError,
   eventTimestamp,
   noopEventSink,
+  redactToolEventInput,
   safeFailure,
   type AgentTool,
   type ApprovalPolicy,
@@ -36,14 +37,6 @@ function eventBase(options: ExecuteAgentToolOptions) {
   };
 }
 
-function eventInput(value: unknown): JsonValue | undefined {
-  try {
-    return JSON.parse(JSON.stringify(value)) as JsonValue;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Executes one host-owned tool through the same validation, scope, approval,
  * timeout, and audit boundary used by agent runtimes.
@@ -52,7 +45,7 @@ export async function executeAgentTool(options: ExecuteAgentToolOptions): Promis
   const sink = options.events ?? noopEventSink;
   const toolCallId = options.toolCallId ?? crypto.randomUUID();
   const input = options.tool.input.parse(options.input);
-  await sink.emit({ ...eventBase(options), type: "tool.requested", toolCallId, toolName: options.tool.name, input: eventInput(options.input) });
+  await sink.emit({ ...eventBase(options), type: "tool.requested", toolCallId, toolName: options.tool.name, input: redactToolEventInput(options.input) });
   const started = Date.now();
   let approvalId: string | undefined;
   try {

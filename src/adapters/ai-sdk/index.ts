@@ -14,6 +14,7 @@ import {
   assertExecutionScope,
   eventTimestamp,
   noopEventSink,
+  redactToolEventInput,
   safeFailure,
   type AgentEvent,
   type AgentInput,
@@ -255,7 +256,7 @@ function toAiTools(tools: readonly AgentTool[], request: ToolAgentRequest<unknow
         approval: definition.requiresApproval ? "required" : "not-required",
       };
       state.calls.push(audit);
-      await emit(sink, { ...eventBase(request, runId), type: "tool.requested", toolCallId, toolName: definition.name, input: rawInput as JsonValue });
+      await emit(sink, { ...eventBase(request, runId), type: "tool.requested", toolCallId, toolName: definition.name, input: redactToolEventInput(rawInput) });
       const started = Date.now();
       let approvalId: string | undefined;
       try {

@@ -1,5 +1,6 @@
 import type { EventSink } from "./events.js";
-import { fanOutEventSink, noopEventSink } from "./events.js";
+import { eventTimestamp, fanOutEventSink, noopEventSink } from "./events.js";
+import { manageAgentContext, type ContextManagementResult } from "./context.js";
 import type { AgentBlueprint, AgentRunMiddleware } from "./extensions.js";
 import { ExtensionRegistry } from "./extensions.js";
 import { AgentVError } from "./errors.js";
@@ -24,6 +25,7 @@ interface PreparedRun<T> {
   request: ToolAgentRequest<T>;
   middleware: readonly AgentRunMiddleware[];
   session?: AgentSession;
+  context?: ContextManagementResult;
 }
 
 export class AgentV {
@@ -112,12 +114,52 @@ export class AgentV {
       for (const item of entered.reverse()) await item.onError?.(error);
       throw error;
     }
-    return { blueprint, engine, request: enriched, middleware, session };
+    const context = enriched.budget?.maxTokens
+      ? manageAgentContext({
+        input: enriched.input,
+        tools: enriched.tools,
+        maxInputTokens: enriched.budget.maxTokens,
+        ...(enriched.trajectory ? { trajectory: enriched.trajectory } : {}),
+      })
+      : undefined;
+    if (context) enriched = { ...enriched, input: context.input };
+    return { blueprint, engine, request: enriched, middleware, session, context };
   }
 
   private eventSink(): EventSink {
     if (!this.runEvents) return this.events;
     return fanOutEventSink(this.events, { emit: (event) => this.runEvents!.append(event) });
+  }
+
+  private async emitContext<T>(prepared: PreparedRun<T>, sink: EventSink): Promise<void> {
+    if (!prepared.context) return;
+    const base = {
+      runId: prepared.request.runId!,
+      timestamp: eventTimestamp(),
+      scope: prepared.request.scope,
+      ...(prepared.request.traceId ? { traceId: prepared.request.traceId } : {}),
+    };
+    if (prepared.context.compaction.occurred) {
+      await sink.emit({
+        ...base,
+        type: "context.compacted",
+        removedMessages: prepared.context.compaction.removedMessages,
+        disclosure: prepared.context.compaction.disclosure!,
+        usage: prepared.context.usage,
+      });
+    } else await sink.emit({ ...base, type: "context.measured", usage: prepared.context.usage });
+  }
+
+  private attachContextUsage<T>(prepared: PreparedRun<T>, result: ToolAgentResult<T>): ToolAgentResult<T> {
+    if (!prepared.context) return result;
+    return {
+      ...result,
+      usage: {
+        ...(result.usage ?? {}),
+        context: prepared.context.usage,
+        cost: result.usage?.cost ?? { status: "unavailable", detail: "The selected runtime did not report monetary cost." },
+      },
+    };
   }
 
   private async saveSession<T>(prepared: PreparedRun<T>, result: ToolAgentResult<T>): Promise<void> {
@@ -146,7 +188,9 @@ export class AgentV {
     try {
       const prepared = await this.prepare(blueprint, request);
       middleware = prepared.middleware;
-      let result = await prepared.engine.run(prepared.request, this.eventSink());
+      const sink = this.eventSink();
+      await this.emitContext(prepared, sink);
+      let result = this.attachContextUsage(prepared, await prepared.engine.run(prepared.request, sink));
       for (const item of [...middleware].reverse()) result = await item.afterRun?.(result) ?? result;
       await this.saveSession(prepared, result);
       return result;
@@ -161,9 +205,11 @@ export class AgentV {
     try {
       const prepared = await this.prepare(blueprint, request);
       middleware = prepared.middleware;
-      const stream = await prepared.engine.stream(prepared.request, this.eventSink());
+      const sink = this.eventSink();
+      await this.emitContext(prepared, sink);
+      const stream = await prepared.engine.stream(prepared.request, sink);
       const result = stream.result.then(async (initial) => {
-        let transformed = initial;
+        let transformed = this.attachContextUsage(prepared, initial);
         for (const item of [...middleware].reverse()) transformed = await item.afterRun?.(transformed) ?? transformed;
         await this.saveSession(prepared, transformed);
         return transformed;

@@ -47,4 +47,4 @@ assert.ok(review.agent.tools.includes("git-show"));
 const planning = await createPlanningRuntime(process.cwd());
 assert.equal(planning.agent.id, "project-planner");
 assert.ok(planning.agent.tools.includes("find-files"));
-assert.ok(!planning.agent.tools.includes("write-text"));
+assert.ok(!planning.agent.tools.includes("create-text"));

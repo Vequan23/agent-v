@@ -225,7 +225,9 @@ export class LocalCliRuntimeEngine implements CodingRuntimeEngine {
         artifactsText(request.input.artifacts),
         outputContract,
         workspaceAccess === "read-only"
-          ? "Do not edit files or perform external side effects."
+          ? tools.length
+            ? "Native workspace access is read-only. Do not edit files. Use only host MCP tools for approved browser, network, or other external actions; guarded actions remain subject to host policy."
+            : "Do not edit files or perform external side effects."
           : tools.length
             ? "Native runtime access is read-only. Use only host MCP tools for approved file changes, commands, browser control, or other side effects. Do not publish, commit, or access paths outside the approved workspace."
             : "Only modify files inside the provided workspace. Do not publish, commit, or access paths outside it.",

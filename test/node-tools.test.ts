@@ -30,7 +30,18 @@ test("filesystem tools stay inside the canonical root and apply exact reviewed e
   await symlink("/etc/hosts", join(root, "outside.txt"));
   const tools = await createFilesystemTools({ rootPath: root });
   const read = named(tools, standardToolNames.readText);
-  assert.deepEqual(await read.execute(read.input.parse({ path: "notes.txt" }), context), { path: "notes.txt", content: "hello world\n" });
+  assert.deepEqual(await read.execute(read.input.parse({ path: "notes.txt", limit: 1 }), context), {
+    path: "notes.txt",
+    state: "ok",
+    content: "1: hello world",
+    offset: 1,
+    returnedLines: 1,
+    totalLines: 2,
+    truncated: true,
+    nextOffset: 2,
+    continuation: "Read notes.txt again with offset 2.",
+    stamp: "sha256:a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+  });
   await assert.rejects(Promise.resolve(read.execute(read.input.parse({ path: "outside.txt" }), context)), /outside the approved workspace root/);
   await assert.rejects(Promise.resolve(read.execute(read.input.parse({ path: "../outside.txt" }), context)), /escapes/);
 
@@ -39,6 +50,12 @@ test("filesystem tools stay inside the canonical root and apply exact reviewed e
   assert.equal(edit.approvalCategory, "write");
   await edit.execute(edit.input.parse({ path: "notes.txt", edits: [{ find: "world", replace: "agent" }] }), context);
   assert.equal(await readFile(join(root, "notes.txt"), "utf8"), "hello agent\n");
+  await writeFile(join(root, "notes.txt"), "changed elsewhere\n", "utf8");
+  await assert.rejects(Promise.resolve(edit.execute(edit.input.parse({ path: "notes.txt", edits: [{ find: "elsewhere", replace: "safely" }] }), context)), /changed after it was read/);
+
+  const create = named(tools, standardToolNames.createText);
+  await create.execute(create.input.parse({ path: "created.txt", content: "new\n" }), context);
+  await assert.rejects(Promise.resolve(create.execute(create.input.parse({ path: "created.txt", content: "overwrite\n" }), context)), /already exists/);
 });
 
 test("coding filesystem tools find, patch, organize, and remove only bounded workspace entries", async () => {
@@ -55,13 +72,18 @@ test("coding filesystem tools find, patch, organize, and remove only bounded wor
 
   const patch = named(tools, standardToolNames.applyWorkspacePatch);
   assert.equal(patch.approvalCategory, "write");
-  assert.deepEqual(await patch.execute(patch.input.parse({ files: [
+  const read = named(tools, standardToolNames.readText);
+  await read.execute(read.input.parse({ path: "src/first.ts" }), context);
+  await read.execute(read.input.parse({ path: "src/second.ts" }), context);
+  const patched = await patch.execute(patch.input.parse({ files: [
     { path: "src/first.ts", edits: [{ find: "false", replace: "true" }] },
     { path: "src/second.ts", edits: [{ find: "false", replace: "true" }] },
-  ] }), context), {
-    files: [{ path: "src/first.ts", editsApplied: 1 }, { path: "src/second.ts", editsApplied: 1 }],
-    editsApplied: 2,
-  });
+  ] }), context) as { files: Array<{ path: string; editsApplied: number }>; editsApplied: number };
+  assert.deepEqual(patched.files.map(({ path, editsApplied }) => ({ path, editsApplied })), [
+    { path: "src/first.ts", editsApplied: 1 },
+    { path: "src/second.ts", editsApplied: 1 },
+  ]);
+  assert.equal(patched.editsApplied, 2);
   assert.match(await readFile(join(root, "src", "first.ts"), "utf8"), /true/);
   assert.match(await readFile(join(root, "src", "second.ts"), "utf8"), /true/);
 
@@ -77,6 +99,18 @@ test("coding filesystem tools find, patch, organize, and remove only bounded wor
   await assert.rejects(Promise.resolve(remove.execute(remove.input.parse({ path: ".", recursive: true }), context)), /root cannot be removed/);
   await remove.execute(remove.input.parse({ path: "archive", recursive: true }), context);
   await assert.rejects(readFile(join(root, "archive", "second.ts"), "utf8"), /ENOENT/);
+});
+
+test("workspace tools can reject high-confidence credential writes without blocking references", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-v-secret-policy-"));
+  const tools = await createFilesystemTools({ rootPath: root, rejectPotentialSecrets: true });
+  const create = named(tools, standardToolNames.createText);
+  await assert.rejects(
+    Promise.resolve(create.execute(create.input.parse({ path: ".env", content: "API_KEY=sk-example-super-secret-value-1234567890\n" }), context)),
+    /Potential credential material was rejected/,
+  );
+  await create.execute(create.input.parse({ path: ".env.example", content: "API_KEY=${OPENAI_API_KEY}\n" }), context);
+  assert.equal(await readFile(join(root, ".env.example"), "utf8"), "API_KEY=${OPENAI_API_KEY}\n");
 });
 
 test("development tools use argument arrays, an explicit command allowlist, and bounded cwd", async () => {

@@ -79,9 +79,9 @@ The standard catalog is split by host authority:
 
 Only arithmetic and date/time are registered automatically by the high-level runtime factory. Filesystem roots, command allowlists, network hosts, browser origins, and controllers must be supplied explicitly. Write, command, network, and browser tools require approval and carry a stable approval category. The standard policy denies missing category decisions.
 
-The standard approval policy retains only a redacted decision history containing ids, tool name, category, and decision. Tool input and metadata are passed to the host decision callback but are not copied into policy history.
+The standard approval policy retains only a redacted decision history containing ids, tool name, category, and decision. Tool input and metadata are passed to the host decision callback but are not copied into policy history. Normalized tool-request events retain safe structural arguments but redact credential-named fields, URL values, bearer-like tokens, file bodies, replacement content, and typed values before reaching an event sink.
 
-Filesystem containment checks both lexical and canonical paths and refuses symlink escape. Discovery does not follow symlinks, exact multi-file edits validate every target before replacement, moves refuse overwrite, and removal can never target the approved root. Mutations remain approval-gated and carry write or destructive categories. Commands never use a shell, inherit only named environment variables, and constrain cwd to the canonical workspace. They still execute with the host user's OS authority and are not represented as a sandbox. HTTP accepts HTTPS or loopback HTTP, requires a host allowlist, rejects URL credentials, bounds the response while streaming, and does not follow redirects automatically. Browser tools require HTTPS or loopback origins and verify the current origin before reads or controls; evidence capabilities such as console capture, screenshots, and waits are registered only when implemented by the host controller.
+Filesystem containment checks both lexical and canonical paths and refuses symlink escape. Discovery does not follow symlinks. Reads are line-numbered and paginated and establish per-run content stamps; exact edits require that observation and reject stale, missing, or ambiguous content. Creation refuses existing targets, exact multi-file edits validate every target before replacement, moves refuse overwrite, and removal can never target the approved root. Hosts may opt into high-confidence credential-write rejection and may declare bounded argv post-edit checks; their scope is disclosed with the mutation approval and their output is returned as verification evidence. Mutations remain approval-gated and carry write or destructive categories. Commands never use a shell, inherit only named environment variables, constrain cwd to the canonical workspace, reject known interactive programs, support foreground or handle-based background lifecycle, and retain bounded output from both the beginning and end. They still execute with the host user's OS authority and are not represented as a sandbox. HTTP accepts HTTPS or loopback HTTP, requires a host allowlist, rejects URL credentials, bounds the response while streaming, and does not follow redirects automatically. Browser tools require HTTPS or loopback origins and verify the current origin before reads or controls; evidence capabilities such as console capture, screenshots, and waits are registered only when implemented by the host controller.
 
 ## Skills and agents
 
@@ -118,6 +118,8 @@ Adapters normalize execution into:
 
 ```text
 run.started
+  context.measured
+  context.compacted?
   model.started / model.completed
   text.delta*
   tool.requested
@@ -127,6 +129,8 @@ run.completed | run.failed
 ```
 
 Events are UI-neutral and scope-carrying. `AgentMessage` uses typed parts for text, JSON, artifacts, files, and images rather than overloading one string.
+
+When a run declares an input token budget, the core estimates instructions, tool schemas, transcript, artifacts, and tool-result pressure before inference. At the configured threshold it inserts a disclosed continuity record containing the original task and host-supplied decisions, modified files, unresolved errors, and current plan while retaining the newest messages. Compaction is observable through normalized events. Token and monetary cost attribution remains adapter-backed; unavailable cost is reported as unavailable rather than inferred from a potentially stale price table.
 
 Persistence is port-based:
 

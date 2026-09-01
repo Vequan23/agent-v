@@ -58,6 +58,8 @@ export interface Citation {
 export interface AgentMessage {
   role: "system" | "user" | "assistant";
   parts: readonly AgentContentPart[];
+  /** Lets hosts attribute retained tool feedback separately without adopting a provider-specific tool-message shape. */
+  contextCategory?: "transcript" | "tool-result";
   citations?: Citation[];
   metadata?: JsonObject;
 }
@@ -87,6 +89,7 @@ export interface RunContext {
   idempotencyKey?: string;
   deadline?: string;
   budget?: RunBudget;
+  trajectory?: import("./context.js").TrajectoryContextState;
   credentialRef?: string;
   engineOptions?: JsonObject;
 }
@@ -134,6 +137,12 @@ export interface TokenUsage {
   input?: number;
   output?: number;
   total?: number;
+  context?: import("./context.js").ContextUsageBreakdown;
+  cost?: {
+    status: "reported" | "estimated" | "included" | "unavailable";
+    amountUsd?: number;
+    detail?: string;
+  };
 }
 
 /** Auditable identity of the adapter, provider/model, and runtime used for a run. */

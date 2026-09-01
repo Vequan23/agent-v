@@ -88,6 +88,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test test/*.test.ts",
+    "test:harness": "node --import tsx --test test/context.test.ts test/harness-conformance.test.ts test/node-tools.test.ts",
     "test:examples": "tsc --noEmit -p examples/tsconfig.json && node --import tsx examples/smoke.ts",
     "test:package": "node test/package-smoke.mjs && node test/package-mcp-smoke.mjs",
     "check": "npm run typecheck && npm test && npm run build && npm run test:examples && npm run test:package && npm pack --dry-run --cache .npm-cache"
