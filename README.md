@@ -24,6 +24,7 @@ It is an engine, not a chatbot framework and not a repository of every product-s
 - Deterministic fakes, provider-free tests, built-package smoke testing, and CI on Node 22 and 24.
 - Packaged guidance for coding agents, executable consumer examples, compatibility metadata, and a safe readiness doctor.
 - Non-executing project inspection with manifest-backed verification and development-server recipes for Node, Python, Rust, and Go projects.
+- External MCP client support for explicitly authorized stdio and Streamable HTTP servers, with modern protocol negotiation, 2025 fallback, host-resolved credentials, namespaced tools, and approval on every tool call.
 
 ## Install
 
@@ -75,6 +76,40 @@ for (const check of plan.checks) {
 The doctor reads only known root manifests and lockfiles. It returns argv pairs, relative working directories, sources, time bounds, project issues, and optional development-server URLs. The host remains responsible for approvals, execution, browser evidence, persistence, and the final verification verdict.
 
 Local coding runtimes can also receive host-owned tools through additive `tools` and `approvalPolicy` request fields. Agent-v creates a private, authenticated MCP bridge for that run, injects it through the runtime's supported ephemeral configuration, and removes it afterward. Existing requests without tools behave exactly as before.
+
+## Connect external MCP servers
+
+`@vraxis/agent-v/mcp` is the client-side counterpart to the private local-runtime bridge. It connects a product to standards-compliant MCP servers over stdio or Streamable HTTP, inventories tools/resources/prompts, and converts discovered tools into ordinary agent-v tools. Products keep connection records, OAuth UX, keychain storage, project/task enablement, and approval receipts.
+
+```ts
+import { connectMcpServer } from "@vraxis/agent-v/mcp";
+import { SystemCredentialStore } from "@vraxis/agent-v/node";
+
+const connection = await connectMcpServer({
+  id: "issue-tracker",
+  name: "Issue tracker",
+  transport: {
+    type: "streamable-http",
+    url: "https://mcp.example.com/mcp",
+    bearerCredentialRef: "keychain://mcp/issue-tracker",
+  },
+}, {
+  credentials: new SystemCredentialStore({ service: "my-product" }),
+  authorizer: {
+    async decide(request) {
+      return await renderAndRecordConnectionApproval(request);
+    },
+  },
+});
+
+console.log(connection.inventory.tools);
+const toolsForThisRun = connection.tools;
+// await connection.close();
+```
+
+Connection consent and tool-call consent are separate. Stdio launch receives an exact executable/argv/cwd, a bounded buffer, and a scrubbed environment; secrets enter only through credential references. Remote endpoints require HTTPS except loopback, reject URL credentials and credential-like query parameters, and resolve sensitive headers immediately before connection. Every discovered MCP tool is namespaced (`mcp__<server>__<tool>`), classified as an untrusted external side effect, and requires host approval even if the server advertises read-only annotations. A server description is never authority to expand scope.
+
+This initial client surface inventories resources and prompts for product attachment flows; direct tool adaptation is available now. Interactive OAuth authorization-code UX remains product-owned and is the next client milestone. Static bearer credentials already use opaque host references and never enter the connection definition or inventory.
 
 ```ts
 await engine.run({

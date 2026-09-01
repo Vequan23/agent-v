@@ -10,6 +10,7 @@ import { createResolvedModelEngine } from "./custom-model-resolver.ts";
 import { registerFilesystemSkill } from "./filesystem-skill.ts";
 import { createHostedProviderAgent } from "./providers.ts";
 import { createPlanningRuntime, createReviewRuntime } from "./runtime-kit.ts";
+import { connectApprovedIssueTracker } from "./mcp-client.ts";
 
 const usage = {
   inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
@@ -48,3 +49,4 @@ const planning = await createPlanningRuntime(process.cwd());
 assert.equal(planning.agent.id, "project-planner");
 assert.ok(planning.agent.tools.includes("find-files"));
 assert.ok(!planning.agent.tools.includes("create-text"));
+assert.equal(typeof connectApprovedIssueTracker, "function");

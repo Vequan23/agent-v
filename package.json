@@ -70,6 +70,10 @@
       "types": "./dist/adapters/local-cli/index.d.ts",
       "import": "./dist/adapters/local-cli/index.js"
     },
+    "./mcp": {
+      "types": "./dist/adapters/mcp/index.d.ts",
+      "import": "./dist/adapters/mcp/index.js"
+    },
     "./ollama": {
       "types": "./dist/adapters/ollama/index.d.ts",
       "import": "./dist/adapters/ollama/index.js"
@@ -104,6 +108,8 @@
     "@ai-sdk/google": "^4.0.58",
     "@ai-sdk/openai": "^4.0.52",
     "@ai-sdk/openai-compatible": "^3.0.41",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.0.0",
     "ai": "^7.0.85",
     "ai-sdk-ollama": "^4.2.0",
     "jsonc-parser": "^3.3.1",

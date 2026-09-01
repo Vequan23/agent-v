@@ -164,6 +164,14 @@ Codex supports enforced read-only and workspace-write modes plus governed host t
 
 Verified Cursor releases use ACP rather than print-mode configuration. The ACP client creates a private workspace, installs project-local deny rules for every native Shell/Read/Write action, advertises no client filesystem or terminal capability, and passes exactly one ephemeral Vraxis stdio MCP server in `session/new`. The approved project is never an ACP filesystem root. Cursor runs in agent mode only inside that private workspace; Vraxis host-tool permission requests may proceed to the host policy, while every other ACP permission request is rejected. This keeps subscription-backed Cursor execution available without writing the approved project or global Cursor configuration. Older or structurally unknown releases fail closed. The inventory reports authentication, discovered models, application presence, and update state without conflating those facts with live readiness.
 
+## External MCP client boundary
+
+`@vraxis/agent-v/mcp` connects outward to third-party MCP servers; it is distinct from the private one-run bridge that exposes host tools to local coding runtimes. The adapter owns protocol negotiation, stdio and Streamable HTTP transports, capability inventory, external-tool namespacing, bounded result normalization, cancellation, and credential-reference resolution. No MCP SDK type crosses the agent-v public API.
+
+An MCP connection is authority. The adapter therefore requires a product-owned connection authorizer before it launches a stdio process or opens a remote session. Stdio receives a scrubbed environment and explicit cwd; remote connections require HTTPS except loopback and reject credentials embedded in URLs or ordinary headers. Discovered descriptions and annotations are untrusted metadata. Every adapted tool is an external, non-idempotent action requiring a separate host approval, regardless of server claims.
+
+Products own durable connection configuration, native keychain records, OAuth authorization-code interaction, connection enablement by project or task, approval UX, receipts, revocation, and user-facing resource/prompt attachment. This keeps reusable protocol mechanics in agent-v without allowing a library connection to become ambient product authority.
+
 Ollama is a model runtime rather than a coding CLI and therefore lives in its own optional adapter. It verifies the native version and tags endpoints, confirms the requested model is installed, and delegates model/tool protocol behavior to the AI SDK 7-compatible `ai-sdk-ollama` provider. Products that do not use Ollama do not load or require that dependency.
 
 ## Product boundary
