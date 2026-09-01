@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0
+
 - Add an external MCP client adapter for explicitly authorized stdio and Streamable HTTP connections, modern protocol negotiation with legacy fallback, host-resolved credential references, tool/resource/prompt inventory, and namespaced approval-gated tools.
 - Add read-before-edit content stamps, stale-read rejection, line-numbered pagination, richer bounded search, and create-only files to the standard workspace tools.
 - Add background command handles, polling, cancellation, caller deadlines, persistent run cwd, interactive-command rejection, and bounded head-and-tail output.

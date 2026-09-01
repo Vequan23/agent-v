@@ -203,7 +203,7 @@ export const runAcpRuntime: AcpRuntimeRunner = async (options) => {
       await request("initialize", {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, auth: { terminal: false } },
-        clientInfo: { name: "agent-v", version: "0.10.0" },
+        clientInfo: { name: "agent-v", version: "0.11.0" },
       });
       await request("authenticate", { methodId: "cursor_login" });
       const session = await request("session/new", {
