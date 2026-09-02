@@ -4,7 +4,7 @@
 
 It is an engine, not a chatbot framework and not a repository of every product-specific tool. Distribution OS can own evidence and channel policy, Aperta can own proof graphs, a reader can own PDF/EPUB ingestion and pedagogy, and consulting products can own client-specific workflows while all use the same execution contract.
 
-## What works in 0.10
+## What works
 
 - Batteries-included hosted provider resolution for OpenAI, Anthropic, Google Gemini, DeepSeek, Z.AI, OpenRouter, Groq, and custom OpenAI-compatible endpoints.
 - Vercel AI SDK 7 structured generation, tool loops, streaming, and per-run model resolution.
@@ -12,7 +12,7 @@ It is an engine, not a chatbot framework and not a repository of every product-s
 - Drop-in local harness inventory with ordered command candidates, known install locations, desktop-app detection, authentication state, model catalogs or aliases, update metadata, and declarative official maintenance actions.
 - Local Ollama models through an optional AI SDK 7-compatible adapter with daemon and installed-model readiness checks.
 - Typed tools with input and output validation, version, risk, side-effect, permission, approval, and timeout declarations.
-- Opt-in standard tools for arithmetic, time, schema validation, bounded workspace discovery and mutation, Git history, allowlisted commands, HTTP, and host-controlled browser evidence and controls.
+- Opt-in standard tools for arithmetic, time, schema validation, bounded workspace discovery and mutation, structured Git state and history, approval-gated remote refresh, allowlisted commands, HTTP, and host-controlled browser evidence and controls.
 - Read-before-edit file safety with content stamps, line-numbered pagination, regex/path/count search, create-only file creation, and atomic exact multi-file patches.
 - Bounded foreground and background commands with persistent run cwd, poll/stop handles, caller deadlines, and head-and-tail output retention.
 - Provider-neutral context accounting and disclosed compaction with continuity records for tasks, decisions, files, errors, and plans.
@@ -269,14 +269,17 @@ Products that need reusable policy evaluation can use `createScopedApprovalPolic
 ## Standard tools and skills
 
 - `@vraxis/agent-v/tools` provides calculator, date/time, named output-contract validation, allowlisted HTTP, browser-controller evidence and controls, and categorized approval policies. Console capture, credential-redacted network evidence, screenshots, and bounded waits are registered only when the host controller implements them. Hosts may also opt into approval-gated first-origin navigation so an agent can request a new safe HTTP(S) destination without receiving ambient browser authority.
-- `@vraxis/agent-v/tools/node` provides canonical-root file discovery, paginated line-numbered reads, regex/literal search, create-only files, exact single- and multi-file edits, directory creation, moves, removal, Git status/diff/log/show, and argument-array command execution with an explicit allowlist. Exact edits require a read from the same run and reject content changed since that read. Optional host-declared post-edit checks run as argv without a shell and return verification receipts. Hosts can opt into high-confidence credential-write rejection while still allowing environment-variable and credential-reference code. Filesystem tools do not follow symlinks outside the approved root, do not overwrite move targets, and never allow the workspace root to be removed. Local commands run with the host user's authority; the package constrains cwd and avoids a shell but does not claim OS sandboxing.
+- `@vraxis/agent-v/tools/node` provides canonical-root file discovery, paginated line-numbered reads, regex/literal search, create-only files, exact single- and multi-file edits, directory creation, moves, removal, Git status/diff/log/show, structured dirty/ahead/behind state, approval-gated remote refresh, and argument-array command execution with an explicit allowlist. Repository state labels locally cached tracking refs honestly; only an approved refresh makes them current. Exact edits require a read from the same run and reject content changed since that read. Optional host-declared post-edit checks run as argv without a shell and return verification receipts. Hosts can opt into high-confidence credential-write rejection while still allowing environment-variable and credential-reference code. Filesystem tools do not follow symlinks outside the approved root, do not overwrite move targets, and never allow the workspace root to be removed. Local commands run with the host user's authority; the package constrains cwd and avoids a shell but does not claim OS sandboxing.
 - `@vraxis/agent-v/skills` provides opt-in repository comprehension, workspace editing, verification, debugging, review, architecture, frontend verification, dependency, security, research, and document skills plus `coding`, `planning`, `debugging`, `research`, `review`, `security`, `frontend`, and `document` recipes.
 
 Recipes never supply product prompts or domain policy. A product still owns its instructions, scope, persistence, evidence rules, and approval experience. Read-only recipes do not gain mutation authority; guarded recipes still require explicit host decisions. HTTP redirects are returned rather than followed automatically, and browser tools require a host controller plus an explicit origin allowlist.
 
 Tool-request events preserve traceable structural arguments but redact credential-named fields, URL query values, bearer-like tokens, file bodies, exact replacement text, and typed values before any event sink receives them. Approval callbacks still receive the validated input in memory so a product can render a private reviewed decision without making raw content part of the durable run ledger.
 
+The `builtInAgentSkills.repositorySync` skill is opt-in. Existing starter recipes keep their tool requirements; hosts may add this skill and its `git-repository-state` and `git-refresh-remote` tools explicitly. Remote refresh requires a separate `network:fetch` permission and host approval, and never grants commit or push authority.
+
 ## Context budgets and continuity
+
 
 `manageAgentContext()` gives any engine a tokenizer-independent, conservative input estimate split across instructions/system messages, tool schemas, transcript, artifacts, and tool results. Hosts mark retained tool feedback with `AgentMessage.contextCategory: "tool-result"`; the contract stays independent of provider-specific tool-message shapes. When a configured threshold is crossed it replaces older transcript entries with an explicit continuity record, preserves recent messages, and reports exactly how many messages were removed. Supplying `budget.maxTokens` to `AgentV.run()` enables the same behavior automatically and emits `context.measured` and `context.compacted` events. Hosts should persist and display those events rather than hiding compaction from the user.
 

@@ -75,7 +75,7 @@ The shared repository should contain broadly reusable, well-tested tool contract
 The standard catalog is split by host authority:
 
 - `@vraxis/agent-v/tools` contains pure tools, allowlisted HTTP, browser-controller contracts, and approval policy. It imports no Node module.
-- `@vraxis/agent-v/tools/node` contains canonical-root filesystem operations, read-only Git inspection, and argument-array command execution.
+- `@vraxis/agent-v/tools/node` contains canonical-root filesystem operations, structured read-only Git inspection, approval-gated remote refresh, and argument-array command execution.
 
 Only arithmetic and date/time are registered automatically by the high-level runtime factory. Filesystem roots, command allowlists, network hosts, browser origins, and controllers must be supplied explicitly. Write, command, network, and browser tools require approval and carry a stable approval category. The standard policy denies missing category decisions.
 

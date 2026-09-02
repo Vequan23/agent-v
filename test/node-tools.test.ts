@@ -135,3 +135,83 @@ test("development tools use argument arrays, an explicit command allowlist, and 
   assert.equal(result.stdout, "ok");
   assert.equal(result.exitCode, 0);
 });
+
+test("repository state distinguishes dirty files, unpushed commits, and stale remote knowledge", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-v-repository-state-"));
+  const remoteRoot = await mkdtemp(join(tmpdir(), "agent-v-repository-remote-"));
+  await execFileAsync("git", ["init", "--bare", remoteRoot]);
+  await execFileAsync("git", ["init", "-b", "main"], { cwd: root });
+  await writeFile(join(root, "README.md"), "# Initial\n", "utf8");
+  await execFileAsync("git", ["-c", "user.name=Agent V Test", "-c", "user.email=test@agent-v.local", "add", "."], { cwd: root });
+  await execFileAsync("git", ["-c", "user.name=Agent V Test", "-c", "user.email=test@agent-v.local", "commit", "-m", "Initial fixture"], { cwd: root });
+  await execFileAsync("git", ["remote", "add", "origin", remoteRoot], { cwd: root });
+  await execFileAsync("git", ["push", "-u", "origin", "main"], { cwd: root });
+  await writeFile(join(root, "tracked.txt"), "committed locally\n", "utf8");
+  await execFileAsync("git", ["add", "tracked.txt"], { cwd: root });
+  await execFileAsync("git", ["-c", "user.name=Agent V Test", "-c", "user.email=test@agent-v.local", "commit", "-m", "Local work"], { cwd: root });
+  await writeFile(join(root, "README.md"), "# Modified\n", "utf8");
+  await writeFile(join(root, "untracked.txt"), "new\n", "utf8");
+
+  const tools = await createDevelopmentTools({ rootPath: root, allowedCommands: [process.execPath] });
+  const repositoryState = named(tools, standardToolNames.gitRepositoryState);
+  const state = await repositoryState.execute(repositoryState.input.parse({}), context) as {
+    branch: string;
+    upstream: string;
+    dirty: boolean;
+    changes: { unstaged: number; untracked: number; truncated: boolean };
+    ahead: number;
+    behind: number;
+    needsPush: boolean;
+    canDeterminePushNeed: boolean;
+    unpushedCommits: Array<{ subject: string }>;
+    remoteStateCaveat: string;
+  };
+  assert.equal(state.branch, "main");
+  assert.equal(state.upstream, "origin/main");
+  assert.equal(state.dirty, true);
+  assert.equal(state.changes.unstaged, 1);
+  assert.equal(state.changes.untracked, 1);
+  assert.equal(state.changes.truncated, false);
+  assert.equal(state.ahead, 1);
+  assert.equal(state.behind, 0);
+  assert.equal(state.needsPush, true);
+  assert.equal(state.canDeterminePushNeed, true);
+  assert.equal(state.unpushedCommits[0]?.subject, "Local work");
+  assert.match(state.remoteStateCaveat, /git-refresh-remote/);
+
+  const refresh = named(tools, standardToolNames.gitRefreshRemote);
+  assert.equal(refresh.requiresApproval, true);
+  assert.equal(refresh.approvalCategory, "network");
+  const refreshed = await refresh.execute(refresh.input.parse({ remote: "origin" }), context) as { remote: string; exitCode: number };
+  assert.equal(refreshed.remote, "origin");
+  assert.equal(refreshed.exitCode, 0);
+  assert.throws(() => refresh.input.parse({ remote: "--upload-pack=sh" }), /unsupported/);
+  await assert.rejects(async () => refresh.execute(refresh.input.parse({ remote: "missing" }), context), /not found/);
+});
+
+test("repository state reports missing repositories and unborn or detached branches honestly", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-v-git-edge-"));
+  const tools = await createDevelopmentTools({ rootPath: root, allowedCommands: [process.execPath] });
+  const inspect = named(tools, standardToolNames.gitRepositoryState);
+  const run = async () => inspect.execute(inspect.input.parse({}), context) as Promise<Record<string, unknown>>;
+  assert.equal((await run()).isRepository, false);
+  await execFileAsync("git", ["init", "-b", "main"], { cwd: root });
+  const unborn = await run();
+  assert.equal(unborn.branch, "main");
+  assert.equal(unborn.dirty, false);
+  assert.equal(unborn.canDeterminePushNeed, false);
+  assert.equal(unborn.needsPush, null);
+  assert.equal(unborn.ahead, null);
+  assert.equal(unborn.behind, null);
+  await execFileAsync("git", ["-c", "user.name=Agent V Test", "-c", "user.email=test@agent-v.local", "commit", "--allow-empty", "-m", "Initial"], { cwd: root });
+  await execFileAsync("git", ["checkout", "--detach"], { cwd: root });
+  assert.equal((await run()).branch, "(detached HEAD)");
+  const refresh = named(tools, standardToolNames.gitRefreshRemote);
+  await assert.rejects(async () => refresh.execute(refresh.input.parse({}), context), /no configured upstream/);
+  await execFileAsync("git", ["remote", "add", "unavailable", join(root, "missing.git")], { cwd: root });
+  const failed = await refresh.execute(refresh.input.parse({ remote: "unavailable" }), context) as Record<string, unknown>;
+  assert.notEqual(failed.exitCode, 0);
+  assert.equal(failed.refreshedAt, null);
+  await writeFile(join(root, ".git", "index"), "invalid index", "utf8");
+  await assert.rejects(run, /working-tree state is unknown/);
+});

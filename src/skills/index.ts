@@ -2,6 +2,16 @@ import { defineAgent, defineSkill, type AgentBlueprint, type AgentCapability, ty
 import { standardToolNames } from "../tools/index.js";
 
 export const builtInAgentSkills = {
+  repositorySync: defineSkill({
+    id: "repository-sync",
+    name: "Repository synchronization",
+    version: "1.0.0",
+    description: "Distinguish local changes, unpushed commits, and cached remote state.",
+    instructions: "Inspect repository state before recommending a push. Treat absent upstreams and failed comparisons as unknown. Request host approval before refreshing a configured remote; refresh never authorizes a push or changes to checked-out files.",
+    tools: [standardToolNames.gitRepositoryState, standardToolNames.gitRefreshRemote],
+    requiredPermissions: ["git:read"],
+    trust: "bundled",
+  }),
   generalUtilities: defineSkill({
     id: "general-utilities",
     name: "General utilities",

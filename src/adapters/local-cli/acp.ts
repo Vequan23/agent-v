@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
-import { AgentVError } from "../../core/index.js";
+import { AGENT_V_VERSION, AgentVError } from "../../core/index.js";
 import type { RuntimeMcpInvocation } from "./definitions.js";
 
 interface JsonRpcMessage {
@@ -203,7 +203,7 @@ export const runAcpRuntime: AcpRuntimeRunner = async (options) => {
       await request("initialize", {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, auth: { terminal: false } },
-        clientInfo: { name: "agent-v", version: "0.11.0" },
+        clientInfo: { name: "agent-v", version: AGENT_V_VERSION },
       });
       await request("authenticate", { methodId: "cursor_login" });
       const session = await request("session/new", {

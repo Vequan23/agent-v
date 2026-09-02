@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
+
+- Add structured repository-state inspection and approval-gated remote refresh tools so hosts can distinguish dirty files, unpushed commits, and stale local remote knowledge without granting arbitrary command execution.
+- Add an opt-in repository synchronization skill without changing the required tools of existing starter recipes. Missing upstreams and failed Git inspection are reported as unknown rather than clean or synchronized.
 
 ## 0.11.0
 

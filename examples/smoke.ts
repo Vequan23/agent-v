@@ -45,6 +45,7 @@ const review = await createReviewRuntime(process.cwd());
 assert.equal(review.agent.id, "project-reviewer");
 assert.equal(review.approvalPolicy.constructor.name, "StandardApprovalPolicy");
 assert.ok(review.agent.tools.includes("git-show"));
+assert.ok(!review.agent.tools.includes("git-refresh-remote"), "Existing recipes do not acquire new required tools.");
 const planning = await createPlanningRuntime(process.cwd());
 assert.equal(planning.agent.id, "project-planner");
 assert.ok(planning.agent.tools.includes("find-files"));

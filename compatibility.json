@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.11.0",
+  "packageVersion": "0.12.0",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
@@ -37,7 +37,7 @@
       "nodeWorkspacePolicy": "canonical-root-no-symlink-escape-no-root-removal",
       "networkPolicy": "https-or-loopback-explicit-host-allowlist",
       "browserPolicy": "host-controller-explicit-origin-allowlist",
-      "tools": ["calculate", "date-time", "validate-json", "list-directory", "find-files", "read-text", "search-text", "create-text", "apply-text-edits", "apply-workspace-patch", "create-directory", "move-path", "remove-path", "git-status", "git-diff", "git-log", "git-show", "run-command", "poll-command", "stop-command", "http-fetch", "browser-snapshot", "browser-console", "browser-network", "browser-screenshot", "browser-wait", "browser-navigate", "browser-click", "browser-type"]
+      "tools": ["calculate", "date-time", "validate-json", "list-directory", "find-files", "read-text", "search-text", "create-text", "apply-text-edits", "apply-workspace-patch", "create-directory", "move-path", "remove-path", "git-status", "git-repository-state", "git-diff", "git-log", "git-show", "git-refresh-remote", "run-command", "poll-command", "stop-command", "http-fetch", "browser-snapshot", "browser-console", "browser-network", "browser-screenshot", "browser-wait", "browser-navigate", "browser-click", "browser-type"]
     },
     "mcp-client": {
       "packageRange": ">=2.0.0 <3",

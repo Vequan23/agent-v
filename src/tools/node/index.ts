@@ -779,7 +779,11 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
   const workingDirectories = new Map<string, string>();
   const backgroundCommands = new Map<string, BackgroundCommand>();
   const contextKey = (context: { sessionId?: string; runId?: string; toolCallId?: string }) => context.sessionId ?? context.runId ?? context.toolCallId ?? "unscoped";
-  const environment: NodeJS.ProcessEnv = { ...options.environment };
+  const environment: NodeJS.ProcessEnv = {
+    GIT_TERMINAL_PROMPT: "0",
+    GCM_INTERACTIVE: "Never",
+    ...options.environment,
+  };
   for (const key of options.inheritedEnvironment ?? ["PATH", "TMPDIR", "LANG", "LC_ALL", "TERM"]) {
     if (process.env[key] !== undefined) environment[key] = process.env[key];
   }
@@ -802,6 +806,84 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
       requiresApproval: false,
       timeoutMs,
       execute(_, context) { return git(["status", "--short", "--branch"], context.abortSignal); },
+    }),
+    defineTool({
+      name: standardToolNames.gitRepositoryState,
+      version: "1.0.0",
+      description: "Determine whether the approved repository has local changes or unpushed commits, with explicit upstream and remote-freshness evidence.",
+      input: defineOutput({ name: "git-repository-state-input", jsonSchema: { type: "object", additionalProperties: false }, parse: () => ({}) }),
+      output,
+      risk: "read",
+      sideEffect: "none",
+      requiredPermissions: ["git:read"],
+      requiresApproval: false,
+      timeoutMs,
+      async execute(_, context): Promise<JsonObject> {
+        const inside = await git(["rev-parse", "--is-inside-work-tree"], context.abortSignal);
+        if (inside.exitCode !== 0 || inside.stdout.trim() !== "true") {
+          return { isRepository: false, error: inside.stderr.trim() || "The approved workspace is not a Git worktree." };
+        }
+        const [branchResult, upstreamResult, statusResult, unstagedStat, stagedStat, fetchHeadPath] = await Promise.all([
+          git(["symbolic-ref", "--quiet", "--short", "HEAD"], context.abortSignal),
+          git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], context.abortSignal),
+          git(["status", "--porcelain=v1", "--untracked-files=normal"], context.abortSignal),
+          git(["diff", "--stat", "--no-ext-diff"], context.abortSignal),
+          git(["diff", "--staged", "--stat", "--no-ext-diff"], context.abortSignal),
+          git(["rev-parse", "--git-path", "FETCH_HEAD"], context.abortSignal),
+        ]);
+        for (const result of [statusResult, unstagedStat, stagedStat]) {
+          if (result.exitCode !== 0) throw new Error("Git repository inspection failed; working-tree state is unknown.");
+        }
+        const branch = branchResult.exitCode === 0 ? branchResult.stdout.trim() : "(detached HEAD)";
+        const upstream = upstreamResult.exitCode === 0 ? upstreamResult.stdout.trim() : undefined;
+        const entries = statusResult.stdout.split(/\r?\n/).filter(Boolean);
+        const staged = entries.filter((line) => line[0] !== " " && line[0] !== "?").length;
+        const unstaged = entries.filter((line) => line[1] !== " " && line[1] !== "?").length;
+        const untracked = entries.filter((line) => line.startsWith("??")).length;
+        let ahead = 0;
+        let behind = 0;
+        let unpushedCommits: Array<{ hash: string; authoredAt: string; subject: string }> = [];
+        if (upstream) {
+          const [counts, commits] = await Promise.all([
+            git(["rev-list", "--left-right", "--count", `${upstream}...HEAD`], context.abortSignal),
+            git(["log", "--max-count=100", "--date=iso-strict", "--format=%H%x09%aI%x09%s", `${upstream}..HEAD`], context.abortSignal),
+          ]);
+          const [behindValue, aheadValue] = counts.stdout.trim().split(/\s+/).map(Number);
+          if (counts.exitCode !== 0 || commits.exitCode !== 0 || !Number.isSafeInteger(behindValue) || !Number.isSafeInteger(aheadValue)) {
+            throw new Error("Git upstream comparison failed; push status is unknown.");
+          }
+          behind = Number.isFinite(behindValue) ? behindValue! : 0;
+          ahead = Number.isFinite(aheadValue) ? aheadValue! : 0;
+          unpushedCommits = commits.stdout.split(/\r?\n/).filter(Boolean).map((line) => {
+            const [hash = "", authoredAt = "", ...subject] = line.split("\t");
+            return { hash, authoredAt, subject: subject.join("\t") };
+          });
+        }
+        let lastFetchedAt: string | undefined;
+        if (fetchHeadPath.exitCode === 0 && fetchHeadPath.stdout.trim()) {
+          const fetchHead = resolve(workspace.rootPath, fetchHeadPath.stdout.trim());
+          lastFetchedAt = await stat(fetchHead).then((value) => value.mtime.toISOString()).catch(() => undefined);
+        }
+        return {
+          isRepository: true,
+          branch,
+          upstream: upstream ?? null,
+          trackingState: upstream ? "known-locally" : "no-upstream",
+          lastFetchedAt: lastFetchedAt ?? null,
+          dirty: entries.length > 0,
+          changes: { total: entries.length, staged, unstaged, untracked, truncated: statusResult.truncated },
+          ahead: upstream ? ahead : null,
+          behind: upstream ? behind : null,
+          unpushedCommits,
+          diffStat: unstagedStat.stdout.trim(),
+          stagedDiffStat: stagedStat.stdout.trim(),
+          canDeterminePushNeed: Boolean(upstream),
+          needsPush: upstream ? ahead > 0 : null,
+          remoteStateCaveat: upstream
+            ? "Ahead and behind counts use locally cached remote-tracking refs. Run git-refresh-remote with approval before treating them as current remote state."
+            : "No upstream is configured, so push status cannot be determined.",
+        };
+      },
     }),
     defineTool({
       name: standardToolNames.gitDiff,
@@ -893,6 +975,45 @@ export async function createDevelopmentTools(options: DevelopmentToolOptions): P
           revision,
           ...(path ? ["--", `:(literal)${workspace.gitPath(path)}`] : []),
         ], context.abortSignal);
+      },
+    }),
+    defineTool({
+      name: standardToolNames.gitRefreshRemote,
+      version: "1.0.0",
+      description: "Refresh one approved repository remote so subsequent repository-state evidence reflects the current remote-tracking refs.",
+      input: defineOutput({
+        name: "git-refresh-remote-input",
+        jsonSchema: { type: "object", properties: { remote: { type: "string" } }, additionalProperties: false },
+        parse(value) {
+          const input = record(value, "Git refresh input");
+          if (input.remote === undefined) return { remote: undefined };
+          const remote = stringField(value, "remote");
+          if (remote.length > 100 || remote.startsWith("-") || !/^[A-Za-z0-9._/-]+$/.test(remote)) throw new TypeError("remote contains unsupported characters.");
+          return { remote };
+        },
+      }),
+      output,
+      risk: "privileged",
+      sideEffect: "idempotent",
+      requiredPermissions: ["git:read", "network:fetch"],
+      requiresApproval: true,
+      approvalCategory: "network",
+      approvalReason: "Refresh the approved repository's remote-tracking refs without changing checked-out files.",
+      timeoutMs,
+      async execute({ remote }, context) {
+        let selected = remote;
+        if (!selected) {
+          const branch = await git(["symbolic-ref", "--quiet", "--short", "HEAD"], context.abortSignal);
+          if (branch.exitCode === 0) {
+            const configured = await git(["config", "--get", `branch.${branch.stdout.trim()}.remote`], context.abortSignal);
+            if (configured.exitCode === 0) selected = configured.stdout.trim();
+          }
+        }
+        if (!selected) throw new TypeError("This branch has no configured upstream remote. Choose a remote explicitly.");
+        const remotes = await git(["remote"], context.abortSignal);
+        if (!remotes.stdout.split(/\r?\n/).includes(selected)) throw new TypeError(`Git remote was not found: ${selected}`);
+        const refreshed = await git(["fetch", "--prune", "--no-tags", selected], context.abortSignal);
+        return { remote: selected, ...refreshed, refreshedAt: refreshed.exitCode === 0 ? new Date().toISOString() : null };
       },
     }),
     defineTool({
