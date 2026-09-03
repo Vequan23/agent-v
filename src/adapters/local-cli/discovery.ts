@@ -366,6 +366,17 @@ export class LocalCliRuntimeDiscovery {
         update: { status: "unknown", detail: "Claude Code manages updates through its own updater." },
       };
     }
+    if (runtimeId === "antigravity") {
+      const catalog = await invoke(this.runner, command, ["models"], this.cwd, this.timeoutMs).catch(() => undefined);
+      const models = parseLocalRuntimeModelCatalog(catalog?.stdout ?? "");
+      return {
+        authentication: "unknown",
+        authenticationDetail: "Sign in once with an interactive agy session, or configure GEMINI_API_KEY for headless runs.",
+        models,
+        modelDiscovery: models.length ? "automatic" : "unavailable",
+        update: { status: "unknown", detail: "Run agy update to check for Antigravity CLI updates." },
+      };
+    }
     const [auth, catalog] = await Promise.all([
       invoke(this.runner, command, ["auth", "list"], this.cwd, this.timeoutMs).catch(() => undefined),
       invoke(this.runner, command, ["models"], this.cwd, this.timeoutMs).catch(() => undefined),

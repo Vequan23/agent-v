@@ -320,6 +320,33 @@ export function createBuiltInRuntimes(host: BuiltInRuntimeHost = {}): readonly L
       ];
     },
   },
+  {
+    id: "antigravity",
+    name: "Antigravity CLI",
+    strategyId: "antigravity-print-json-v1",
+    command: "agy",
+    versionArgs: ["--version"],
+    capabilities: ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"],
+    maintenance: {
+      documentationUrl: "https://antigravity.google/docs/cli/overview",
+      updateArgs: ["update"],
+    },
+    buildInvocation(input) {
+      return [
+        "-p",
+        "--output-format",
+        "json",
+        "--json-schema",
+        input.outputSchemaFile,
+        "--add-dir",
+        input.workspace,
+        "--mode",
+        input.workspaceAccess === "read-only" ? "plan" : "accept-edits",
+        ...(input.model ? ["--model", input.model] : []),
+        input.prompt,
+      ];
+    },
+  },
   ];
 }
 

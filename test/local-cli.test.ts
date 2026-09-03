@@ -35,6 +35,40 @@ test("Claude keeps ordinary read-only execution in Plan mode", () => {
   assert.equal(args[permissionMode + 1], "plan");
 });
 
+test("Antigravity uses plan mode for read-only headless runs", () => {
+  const antigravity = builtInRuntimes.find((runtime) => runtime.id === "antigravity");
+  assert.ok(antigravity);
+  const readOnly = antigravity.buildInvocation({
+    prompt: "return json",
+    workspace: "/tmp/work",
+    outputFile: "/tmp/out",
+    outputSchemaFile: "/tmp/schema.json",
+    workspaceAccess: "read-only",
+  });
+  assert.ok(readOnly.includes("--mode"));
+  assert.equal(readOnly[readOnly.indexOf("--mode") + 1], "plan");
+  assert.ok(readOnly.includes("--json-schema"));
+  assert.ok(readOnly.includes("--add-dir"));
+
+  const write = antigravity.buildInvocation({
+    prompt: "return json",
+    workspace: "/tmp/work",
+    outputFile: "/tmp/out",
+    outputSchemaFile: "/tmp/schema.json",
+    workspaceAccess: "workspace-write",
+  });
+  assert.equal(write[write.indexOf("--mode") + 1], "accept-edits");
+});
+
+test("Antigravity JSON envelopes expose structured output", () => {
+  const output = parseRuntimeOutput("antigravity", JSON.stringify({
+    status: "SUCCESS",
+    structured_output: { answer: 42 },
+    response: "{\"answer\":42}\n",
+  }));
+  assert.deepEqual(output.value, { answer: 42 });
+});
+
 test("normalizes JSONL runtime output", () => {
   const output = parseRuntimeOutput("opencode", '{"type":"text","text":"{\\"answer\\":42}"}\n');
   assert.deepEqual(output.value, { answer: 42 });
@@ -70,7 +104,7 @@ test("classifies rejected ephemeral MCP configuration without exposing raw diagn
   assert.doesNotMatch(classified.message, /config\.toml|mcp_servers/);
 });
 
-for (const runtimeId of ["opencode", "claude-code", "cursor"] as const) {
+for (const runtimeId of ["opencode", "claude-code", "cursor", "antigravity"] as const) {
   test(`${runtimeId} receives the actual JSON Schema in its prompt`, async () => {
     let receivedPrompt = "";
     const runner = async (_command: string, args: readonly string[]) => {
@@ -81,7 +115,9 @@ for (const runtimeId of ["opencode", "claude-code", "cursor"] as const) {
         ? { stdout: JSON.stringify({ type: "result", result: value }), stderr: "" }
         : runtimeId === "cursor"
           ? { stdout: JSON.stringify({ type: "result", result: value }), stderr: "" }
-          : { stdout: `${JSON.stringify({ type: "text", text: value })}\n`, stderr: "" };
+          : runtimeId === "antigravity"
+            ? { stdout: JSON.stringify({ status: "SUCCESS", structured_output: { answer: 42 }, response: value }), stderr: "" }
+            : { stdout: `${JSON.stringify({ type: "text", text: value })}\n`, stderr: "" };
     };
     const engine = new LocalCliRuntimeEngine({ runner });
     const output = defineOutput({
@@ -92,7 +128,13 @@ for (const runtimeId of ["opencode", "claude-code", "cursor"] as const) {
         return { answer: 42 };
       },
     });
-    const result = await engine.run({ runtimeId, workspaceAccess: runtimeId === "opencode" ? "workspace-write" : "read-only", scope: localExecutionScope("schema-prompt"), input: { prompt: "Return the answer." }, output });
+    const result = await engine.run({
+      runtimeId,
+      workspaceAccess: runtimeId === "opencode" || runtimeId === "antigravity" ? "workspace-write" : "read-only",
+      scope: localExecutionScope("schema-prompt"),
+      input: { prompt: "Return the answer." },
+      output,
+    });
     assert.deepEqual(result.output, { answer: 42 });
     assert.match(receivedPrompt, /Required output contract "answer-contract"/);
     assert.match(receivedPrompt, /"answer"/);

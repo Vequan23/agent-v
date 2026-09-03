@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.0
+
+- Add Antigravity CLI (`agy`) as a built-in local harness with headless JSON envelopes, schema-constrained output, model discovery, and plan/accept-edits workspace modes.
+
 ## 0.12.0
 
 - Add structured repository-state inspection and approval-gated remote refresh tools so hosts can distinguish dirty files, unpushed commits, and stale local remote knowledge without granting arbitrary command execution.

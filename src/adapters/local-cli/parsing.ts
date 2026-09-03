@@ -83,6 +83,26 @@ function textFromJsonLines(stdout: string): { text: string; activityCount: numbe
 
 export function parseRuntimeOutput(runtimeId: string, stdout: string, outputFileContent = ""): { value: unknown; activityCount: number } {
   if (outputFileContent.trim()) return { value: parseJson(outputFileContent), activityCount: stdout.split("\n").filter(Boolean).length };
+  if (runtimeId === "antigravity") {
+    try {
+      const envelope = JSON.parse(stdout.trim()) as {
+        status?: string;
+        structured_output?: unknown;
+        response?: string;
+        error?: string;
+      };
+      if (envelope.status && envelope.status !== "SUCCESS") {
+        throw new AgentVError("invocation-failed", envelope.error ?? `Antigravity exited with status ${envelope.status}.`);
+      }
+      return {
+        value: envelope.structured_output ?? parseJson(String(envelope.response ?? "")),
+        activityCount: 1,
+      };
+    } catch (error) {
+      if (error instanceof AgentVError) throw error;
+      throw new AgentVError("invalid-json", "The Antigravity CLI transport returned an unreadable JSON envelope.", { cause: error });
+    }
+  }
   if (runtimeId === "claude-code") {
     try {
       const envelope = JSON.parse(stdout) as { result?: string; structured_output?: unknown };

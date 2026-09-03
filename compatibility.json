@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageVersion": "0.12.0",
+  "packageVersion": "0.13.0",
   "node": ">=22.12",
   "adapters": {
     "ai-sdk": {
@@ -81,12 +81,16 @@
         "cursor": {
           "strategy": "cursor-acp-v1",
           "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts", "mcp-tools"]
+        },
+        "antigravity": {
+          "strategy": "antigravity-print-json-v1",
+          "capabilities": ["structured-output", "local-workspace", "read-only-workspace", "workspace-write", "artifacts"]
         }
       }
     },
     "skill-inventory": {
       "format": "agent-skills-filesystem-v1",
-      "runtimes": ["codex", "claude-code", "cursor", "opencode"],
+      "runtimes": ["codex", "claude-code", "cursor", "opencode", "antigravity"],
       "remoteSourcePolicy": "record-without-downloading"
     }
   }
